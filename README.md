@@ -7,8 +7,8 @@ schedules its own resumption for the moment the window resets, and continues
 in the **same open terminal session**. A background watcher catches the cases
 where the limit is hit anyway.
 
-Free, local, dependency-free (Python 3 stdlib only). macOS and Linux
-(incl. WSL); native Windows not yet supported.
+Free, local, dependency-free (Python 3 stdlib only). macOS, Linux (incl.
+WSL), and native Windows (experimental).
 
 ## How it works
 
@@ -35,7 +35,14 @@ Free, local, dependency-free (Python 3 stdlib only). macOS and Linux
 
 ```bash
 git clone https://github.com/asiagenawi/session-sentinel.git && cd session-sentinel
-./install.sh
+./install.sh        # macOS / Linux / WSL
+```
+
+Native Windows (PowerShell 7 recommended):
+
+```powershell
+git clone https://github.com/asiagenawi/session-sentinel.git; cd session-sentinel
+.\install.ps1
 ```
 
 Idempotent; re-run to upgrade. It copies scripts to
@@ -84,8 +91,16 @@ claude-sentinel log      # recent sentinel activity
   alacritty, xterm, …; set `terminal_app` to a binary name to override).
   Headless Linux servers work too — the watcher just falls straight to
   headless resume. Run `loginctl enable-linger $USER` if you want the watcher
-  active while logged out. Native Windows: not yet (PRs welcome); WSL works
-  via the Linux path.
+  active while logged out.
+- **Windows (experimental)**: token from `~/.claude/.credentials.json`, watcher
+  via Task Scheduler (every 2 min, `pythonw` so no console flash), toast
+  notifications, resume in Windows Terminal (`wt`) or a new cmd window.
+  Liveness detection is deliberately conservative (rename-test + claude.exe
+  check): when in doubt it notifies instead of auto-resuming, so it never
+  forks a live session — worst case you click instead of it being automatic.
+  Exercised by CI on real Windows runners; interactive behavior (window spawn,
+  toasts) is less battle-tested than macOS/Linux — issues welcome. WSL users:
+  just use `./install.sh` inside WSL instead.
 
 ## Uninstall
 
@@ -93,3 +108,5 @@ claude-sentinel log      # recent sentinel activity
 ./uninstall.sh          # removes hooks, watcher, CLI; keeps config/checkpoints
 ./uninstall.sh --purge  # removes everything
 ```
+
+Windows: `.\uninstall.ps1` (or `.\uninstall.ps1 -Purge`).

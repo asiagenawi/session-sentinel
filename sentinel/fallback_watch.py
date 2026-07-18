@@ -10,6 +10,7 @@ record in the transcript), waits for the window reset, then resumes VISIBLY:
 Flags: --dry-run (report decisions, act on nothing)
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -18,8 +19,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sentinel_common import (CHECKPOINT_DIR, IS_MAC, PROJECTS_DIR, fmt_local,
-                             load_config, load_state, log, save_state)
+from sentinel_common import (CHECKPOINT_DIR, IS_MAC, IS_WIN, PROJECTS_DIR,
+                             SENTINEL_DIR, fmt_local, load_config, load_state,
+                             log, save_state)
 
 # (binary, flags-before-command) pairs, tried in order on Linux
 LINUX_TERMINALS = [
@@ -99,7 +101,28 @@ def parse_reset(text, error_ts_iso):
 
 
 def transcript_holders(path):
-    """PIDs holding the transcript open (claude keeps its session file open)."""
+    """PIDs holding the transcript open (claude keeps its session file open).
+
+    Windows has no lsof//proc, so the check is deliberately conservative:
+    report 'alive' (a sentinel [-1]) if the transcript file is held open
+    (rename-test) OR any claude.exe is running. False 'alive' just means the
+    user gets a notification instead of an auto-resume — never a forked session.
+    """
+    if IS_WIN:
+        try:
+            out = subprocess.run(["tasklist"], capture_output=True, text=True,
+                                 timeout=15).stdout.lower()
+            if "claude.exe" in out:
+                return [-1]
+        except Exception:
+            return [-1]
+        try:
+            probe = str(path) + ".livecheck"
+            os.replace(str(path), probe)
+            os.replace(probe, str(path))
+            return []          # rename succeeded -> nothing holds it open
+        except OSError:
+            return [-1]        # held open (or locked) -> treat as alive
     try:
         out = subprocess.run(["lsof", "-t", str(path)], capture_output=True,
                              text=True, timeout=10)
@@ -133,6 +156,19 @@ def resume_prompt(session_id):
 def open_terminal_resume(cwd, session_id, cfg):
     prompt = resume_prompt(session_id).replace('"', '\\"')
     shell_cmd = f'cd {cwd} && claude --resume {session_id} "{prompt}"'
+    if IS_WIN:
+        import shutil
+        claude = shutil.which("claude") or "claude"
+        # A batch file sidesteps cmd.exe quoting entirely.
+        bat = SENTINEL_DIR / f"resume-{session_id}.cmd"
+        bat.write_text(f'@echo off\r\ncd /d "{cwd}"\r\n'
+                       f'"{claude}" --resume {session_id} "{resume_prompt(session_id)}"\r\n')
+        if shutil.which("wt"):
+            subprocess.Popen(["wt", "new-tab", "cmd", "/k", str(bat)])
+        else:
+            subprocess.Popen(["cmd", "/c", "start", "session-sentinel", "cmd",
+                              "/k", str(bat)])
+        return
     if not IS_MAC:
         import shutil
         preferred = cfg.get("terminal_app")
@@ -160,20 +196,35 @@ def open_terminal_resume(cwd, session_id, cfg):
         raise RuntimeError(f"osascript failed: {r.stderr.strip()}")
 
 
+WIN_TOAST_PS = """
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null
+$x = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+$t = $x.GetElementsByTagName('text'); $t.Item(0).AppendChild($x.CreateTextNode($env:SS_TITLE)) | Out-Null; $t.Item(1).AppendChild($x.CreateTextNode($env:SS_MSG)) | Out-Null
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('session-sentinel').Show([Windows.UI.Notifications.ToastNotification]::new($x))
+"""
+
+
 def notify(title, message):
     if IS_MAC:
         cmd = ["osascript", "-e",
                f'display notification "{message}" with title "{title}"']
+        env = None
+    elif IS_WIN:
+        cmd = ["powershell", "-NoProfile", "-Command", WIN_TOAST_PS]
+        env = {**os.environ, "SS_TITLE": title, "SS_MSG": message}
     else:
         cmd = ["notify-send", title, message]
+        env = None
     try:
-        subprocess.run(cmd, capture_output=True, timeout=10)
+        subprocess.run(cmd, capture_output=True, timeout=15, env=env)
     except Exception:
         pass  # notification is best-effort everywhere
 
 
 def headless_resume(cwd, session_id, cfg):
-    cmd = ["claude", "--resume", session_id, "-p", resume_prompt(session_id),
+    import shutil
+    claude = shutil.which("claude") or "claude"  # resolves claude.cmd on Windows
+    cmd = [claude, "--resume", session_id, "-p", resume_prompt(session_id),
            *cfg.get("headless_resume_extra_args", [])]
     subprocess.Popen(cmd, cwd=cwd, stdout=open(str(CHECKPOINT_DIR.parent / "sentinel.log"), "a"),
                      stderr=subprocess.STDOUT, start_new_session=True)

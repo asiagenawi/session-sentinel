@@ -21,7 +21,8 @@ LOG_PATH = SENTINEL_DIR / "sentinel.log"
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 KEYCHAIN_SERVICE_PREFIX = "Claude Code-credentials"
 IS_MAC = sys.platform == "darwin"
-CREDENTIALS_FILE = CLAUDE_DIR / ".credentials.json"  # Linux/WSL token location
+IS_WIN = os.name == "nt"
+CREDENTIALS_FILE = CLAUDE_DIR / ".credentials.json"  # Linux/WSL/Windows token location
 
 DEFAULT_CONFIG = {
     "enabled": True,

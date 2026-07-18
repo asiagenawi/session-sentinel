@@ -1,0 +1,111 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unix:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check
+        run: |
+          python3 -m py_compile sentinel/*.py scripts/*.py bin/claude-sentinel
+          bash -n install.sh uninstall.sh
+      - name: Install
+        run: ./install.sh
+      - name: Fixture transcript
+        run: |
+          mkdir -p "$HOME/.claude/projects/-test"
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          rec = {"type": "assistant", "sessionId": "ci-test",
+                 "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                 "message": {"usage": {"input_tokens": 100, "output_tokens": 50,
+                                       "cache_creation_input_tokens": 10,
+                                       "cache_read_input_tokens": 5}}}
+          path = os.path.expanduser("~/.claude/projects/-test/ci-test.jsonl")
+          with open(path, "w") as f:
+              f.write(json.dumps(rec) + "\n")
+          PY
+      - name: Monitor (local source)
+        run: |
+          python3 "$HOME/.claude/session-sentinel/usage_check.py" --debug --force-local | tee out.json
+          python3 -c "import json; d=json.load(open('out.json')); assert d['source']=='local', d"
+      - name: Hook emission at threshold
+        run: |
+          python3 - <<'PY'
+          import json, os
+          p = os.path.expanduser("~/.claude/session-sentinel/config.json")
+          cfg = json.load(open(p)); cfg["threshold_pct"] = 0; cfg["endpoint_enabled"] = False
+          cfg["local_budget_weighted_tokens"] = 1000
+          json.dump(cfg, open(p, "w"))
+          sp = os.path.expanduser("~/.claude/session-sentinel/state.json")
+          if os.path.exists(sp):
+              st = json.load(open(sp)); st["last_check"] = 0; json.dump(st, open(sp, "w"))
+          PY
+          echo '{"session_id":"ci-test","hook_event_name":"PostToolUse"}' \
+            | python3 "$HOME/.claude/session-sentinel/usage_check.py" | tee hook.json
+          python3 -c "import json; d=json.load(open('hook.json')); assert 'USAGE LIMIT WARNING' in d['hookSpecificOutput']['additionalContext']"
+      - name: Watcher dry-run + CLI
+        run: |
+          python3 "$HOME/.claude/session-sentinel/fallback_watch.py" --dry-run
+          "$HOME/.local/bin/claude-sentinel" status
+          "$HOME/.local/bin/claude-sentinel" off
+          "$HOME/.local/bin/claude-sentinel" on
+          "$HOME/.local/bin/claude-sentinel" log
+      - name: Uninstall
+        run: |
+          ./uninstall.sh --purge
+          python3 -c "import json,os; s=json.load(open(os.path.expanduser('~/.claude/settings.json'))); assert 'session-sentinel' not in json.dumps(s)"
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check
+        run: python -m py_compile sentinel/sentinel_common.py sentinel/usage_check.py sentinel/fallback_watch.py scripts/hooks_config.py bin/claude-sentinel
+      - name: Install
+        shell: pwsh
+        run: .\install.ps1
+      - name: Verify scheduled task exists
+        shell: pwsh
+        run: schtasks /query /tn session-sentinel-watcher /fo LIST
+      - name: Fixture transcript
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude\projects\-test" | Out-Null
+          python -c "import json,os,datetime; rec={'type':'assistant','sessionId':'ci-test','timestamp':datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00','Z'),'message':{'usage':{'input_tokens':100,'output_tokens':50,'cache_creation_input_tokens':10,'cache_read_input_tokens':5}}}; open(os.path.expandvars(r'%USERPROFILE%\.claude\projects\-test\ci-test.jsonl'),'w').write(json.dumps(rec)+'\n')"
+      - name: Monitor (local source)
+        shell: pwsh
+        run: |
+          python "$env:USERPROFILE\.claude\session-sentinel\usage_check.py" --debug --force-local | Tee-Object out.json
+          python -c "import json; d=json.load(open('out.json')); assert d['source']=='local', d"
+      - name: Hook emission at threshold
+        shell: pwsh
+        run: |
+          python -c "import json,os; p=os.path.expandvars(r'%USERPROFILE%\.claude\session-sentinel\config.json'); cfg=json.load(open(p)); cfg.update(threshold_pct=0, endpoint_enabled=False, local_budget_weighted_tokens=1000); json.dump(cfg, open(p,'w'))"
+          '{"session_id":"ci-test","hook_event_name":"PostToolUse"}' | python "$env:USERPROFILE\.claude\session-sentinel\usage_check.py" | Tee-Object hook.json
+          python -c "import json; d=json.load(open('hook.json')); assert 'USAGE LIMIT WARNING' in d['hookSpecificOutput']['additionalContext']"
+      - name: Watcher dry-run + CLI
+        shell: pwsh
+        run: |
+          python "$env:USERPROFILE\.claude\session-sentinel\fallback_watch.py" --dry-run
+          & "$env:USERPROFILE\.local\bin\claude-sentinel.cmd" status
+          & "$env:USERPROFILE\.local\bin\claude-sentinel.cmd" off
+          & "$env:USERPROFILE\.local\bin\claude-sentinel.cmd" on
+          & "$env:USERPROFILE\.local\bin\claude-sentinel.cmd" log
+      - name: Liveness check (rename-test on open file)
+        shell: pwsh
+        run: python scripts\ci_liveness_test.py
+      - name: Uninstall
+        shell: pwsh
+        run: |
+          .\uninstall.ps1 -Purge
+          python -c "import json,os; s=json.load(open(os.path.expandvars(r'%USERPROFILE%\.claude\settings.json'))); assert 'session-sentinel' not in json.dumps(s)"
+          $r = schtasks /query /tn session-sentinel-watcher 2>&1; if ($LASTEXITCODE -eq 0) { throw "task still exists" } else { exit 0 }

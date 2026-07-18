@@ -22,34 +22,8 @@ install -m 755 "$REPO_DIR/bin/claude-sentinel" "$BIN_DIR/claude-sentinel"
 echo "installed files -> $SENTINEL_DIR, CLI -> $BIN_DIR/claude-sentinel"
 
 # 2. Register hooks in ~/.claude/settings.json (merge, never clobber)
-python3 - "$SETTINGS" <<'PY'
-import json, sys, time, shutil, os
-path = sys.argv[1]
-cmd = "python3 ~/.claude/session-sentinel/usage_check.py"
-try:
-    with open(path) as f:
-        settings = json.load(f)
-    shutil.copy(path, path + f".sentinel-backup")
-except (OSError, json.JSONDecodeError):
-    settings = {}
-hooks = settings.setdefault("hooks", {})
-def ensure(event, matcher):
-    entries = hooks.setdefault(event, [])
-    for e in entries:
-        for h in e.get("hooks", []):
-            if "session-sentinel" in h.get("command", ""):
-                return
-    entry = {"hooks": [{"type": "command", "command": cmd}]}
-    if matcher is not None:
-        entry["matcher"] = matcher
-    entries.append(entry)
-ensure("PostToolUse", "*")
-ensure("UserPromptSubmit", None)
-ensure("Stop", None)
-with open(path, "w") as f:
-    json.dump(settings, f, indent=2)
-print("hooks registered in", path, "(backup: settings.json.sentinel-backup)")
-PY
+python3 "$REPO_DIR/scripts/hooks_config.py" register "$SETTINGS" \
+    "python3 ~/.claude/session-sentinel/usage_check.py"
 
 # 3. fallback watcher (launchd on macOS, systemd user timer on Linux)
 if [ "$(uname)" = "Darwin" ]; then
