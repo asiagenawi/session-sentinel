@@ -112,35 +112,25 @@ claude-powernap log      # what the watcher and monitor have been doing
 | `headless_resume_extra_args` | `[]` | extra flags for last-resort headless resume |
 | `local_budget_weighted_tokens` | `null` | manual budget for local estimation |
 
-## Caveats (read these — they're the honest part)
+## Caveats
 
-- **Usage numbers come from an undocumented endpoint** — the same one Claude
-  Code's own `/usage` screen calls, authenticated with the OAuth token Claude
-  Code already stores on your machine. Nothing leaves your machine except
-  that one HTTPS request to Anthropic. It isn't a published API and could
-  change or be restricted at any time; the tool automatically degrades to
-  local estimation if it fails. Worth naming plainly: Anthropic's consumer
-  terms scope OAuth tokens to Claude Code itself, so a script making this
-  query — even the identical read-only call `/usage` makes, the same pattern
-  ccusage-class tools use — sits in a ToS gray area. Set
-  `endpoint_enabled: false` if you'd rather avoid it entirely — everything
-  still works, just with an approximate percentage (self-calibrated,
-  conservative threshold recommended).
-- The paused session must stay open — that's the point. The self-resume uses
-  Claude Code's native scheduled-tasks feature.
-- **Platforms**: macOS uses Keychain + launchd + osascript. Linux uses
-  `~/.claude/.credentials.json` + a systemd user timer + `notify-send`, and
-  auto-detects your terminal emulator. Headless Linux servers work — the
-  watcher falls through to headless resume. Run `loginctl enable-linger
-  $USER` to keep the watcher active while logged out.
-- **Windows (experimental)**: token from `~/.claude/.credentials.json`,
-  watcher via Task Scheduler (`pythonw`, no console flash), toast
-  notifications, resume in Windows Terminal or a new cmd window. Liveness
-  detection is deliberately conservative (rename-test + claude.exe check):
-  when in doubt it notifies you instead of auto-resuming, so it never forks
-  a live session — worst case is one click instead of full automation.
-  Exercised by CI on real Windows runners; interactive behavior is less
-  battle-tested than macOS/Linux. WSL users: use `./install.sh` inside WSL.
+- **Undocumented usage endpoint** — exact percentages come from the same
+  unpublished API `/usage` uses (read-only, via the OAuth token already on
+  your machine; a ToS gray area). Worked around: if the endpoint fails or
+  you set `endpoint_enabled: false`, the tool degrades automatically to
+  local transcript estimation, self-calibrated whenever endpoint data was
+  available.
+- **The paused session must stay open** — that's the point. If its alarm
+  dies anyway (sleep, reboot, crash), the watcher notices the missed wake-up
+  and resumes the session itself.
+- **Windows is experimental** — Windows can't reliably tell whether a session
+  is still open, so the watcher errs toward caution there: when unsure it
+  notifies you instead of auto-resuming (one click, never a forked session).
+  CI runs the full cycle on real Windows runners. WSL users: use
+  `./install.sh` inside WSL.
+- **Linux notes**: terminal emulator auto-detected; headless servers fall
+  through to headless resume; `loginctl enable-linger $USER` keeps the
+  watcher running while logged out.
 
 ## Uninstall
 
