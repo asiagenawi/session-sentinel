@@ -49,6 +49,18 @@ def log(msg):
         f.write(f"{ts} {msg}\n")
 
 
+def log_throttled(state, key, msg, now=None, interval=3600):
+    """Log msg at most once per `interval`, tracked in state under `key`.
+
+    For conditions that persist across many checks (missing token, garbage
+    budget): one line per hour keeps the log debuggable without spam.
+    """
+    now = now or time.time()
+    if now - state.get(key, 0) >= interval:
+        state[key] = now
+        log(msg)
+
+
 def load_json(path, default):
     try:
         with open(path) as f:
@@ -64,6 +76,13 @@ def load_config():
     weights = {**DEFAULT_CONFIG["token_weights"], **(user.get("token_weights") or {})}
     cfg.update(user)
     cfg["token_weights"] = weights
+    # Sanity: a real 5h budget is millions of weighted tokens. A tiny value is
+    # a test/demo leftover (CI's threshold step writes 1000) and would inflate
+    # pct by orders of magnitude — ignore it, remember why for the log line.
+    budget = cfg.get("local_budget_weighted_tokens")
+    if budget and budget < 100_000:
+        cfg["ignored_local_budget"] = budget
+        cfg["local_budget_weighted_tokens"] = None
     return cfg
 
 
@@ -195,6 +214,8 @@ def get_usage_from_endpoint(state):
     """
     token = get_oauth_token(state)
     if not token:
+        log_throttled(state, "no_token_log_ts",
+                      "no valid OAuth token; falling back to local estimation")
         return None
     req = urllib.request.Request(USAGE_URL, headers={
         "Authorization": f"Bearer {token}",
@@ -301,8 +322,15 @@ def get_usage_local(state):
     blocks = _blocks(events)
     current = blocks[-1] if blocks and now < blocks[-1]["start"] + 5 * 3600 else None
 
+    if cfg.get("ignored_local_budget"):
+        log_throttled(state, "bad_budget_log_ts",
+                      f"config local_budget_weighted_tokens={cfg['ignored_local_budget']} "
+                      f"is implausibly small (<100000); ignoring it (test/demo leftover?)")
+
     # Budget preference: explicit config > endpoint-calibrated > limit-hit heuristic.
-    budget = cfg.get("local_budget_weighted_tokens") or state.get("calibrated_budget")
+    budget, budget_src = cfg.get("local_budget_weighted_tokens"), "config"
+    if not budget:
+        budget, budget_src = state.get("calibrated_budget"), "calibrated"
     if not budget and now - state.get("no_hits_scan_ts", 0) > 3600:
         # A block that ended in a rate-limit hit reached ~100% of the budget.
         # The 14-day scan is expensive; when it finds nothing, retry hourly
@@ -311,15 +339,29 @@ def get_usage_local(state):
         hits = [b["tokens"] for b in _blocks(cal_events) if b["hit_limit"]]
         if hits:
             budget = state["calibrated_budget"] = max(hits)
+            budget_src = "limit-hit heuristic"
         else:
             state["no_hits_scan_ts"] = now
 
     if current is None:
         return {"source": "local", "pct": 0.0, "resets_at": None,
                 "weekly_pct": None, "weekly_resets_at": None}
-    resets_at = datetime.fromtimestamp(current["start"] + 5 * 3600,
-                                       tz=timezone.utc).isoformat()
+    demo_min = cfg.get("demo_resets_in_min")  # testing/demo: pretend the window
+    reset_ep = (now + demo_min * 60) if demo_min \
+        else current["start"] + 5 * 3600      # resets N minutes from now
+    resets_at = datetime.fromtimestamp(reset_ep, tz=timezone.utc).isoformat()
     pct = round(current["tokens"] / budget * 100, 1) if budget else None
+    # An estimate this far past 100% means the BUDGET is garbage (leftover
+    # test/demo config, bad calibration), not that the user 10x-ed the limit.
+    # Better no estimate than a wildly wrong one driving false pauses.
+    if pct is not None and pct > 150:
+        log_throttled(state, "bad_estimate_log_ts",
+                      f"local estimate unreliable: pct={pct} "
+                      f"block_tokens={int(current['tokens'])} budget={int(budget)} "
+                      f"budget_source={budget_src}; discarding estimate")
+        pct = None
+    elif pct is not None and pct > 100:
+        pct = 100.0  # mild overshoot: local estimation noise, clamp
     return {"source": "local", "pct": pct, "resets_at": resets_at,
             "weekly_pct": None, "weekly_resets_at": None}
 
@@ -419,7 +461,9 @@ def projected_minutes_to_limit(state, now=None):
     rate /= weight
     if rate <= 0.05:                     # effectively idle
         return None
-    return (100 - hist[-1][1]) / rate
+    # Never negative: last_pct above 100 means "already there", not
+    # "the limit was minutes ago".
+    return max(0.0, 100 - hist[-1][1]) / rate
 
 
 def get_usage(state, cfg=None):

@@ -32,7 +32,7 @@ def build_warning(pct, resets_iso, session_id, cfg, source, projected=None):
     ckpt = CHECKPOINT_DIR / f"{session_id or 'unknown-session'}.md"
     approx = " (approximate local estimate)" if source == "local" else ""
     pace = (f" At the current burn rate the limit is ~{projected:.0f} minutes away."
-            if projected is not None else "")
+            if projected is not None and projected > 0 else "")
     return (
         f"[claude-powernap] USAGE LIMIT WARNING: you have consumed {pct}% of the "
         f"5-hour usage window{approx}. The window resets at {fmt_local(resets_iso)}.{pace} "

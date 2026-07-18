@@ -44,7 +44,7 @@ jobs:
           import json, os
           p = os.path.expanduser("~/.claude/claude-powernap/config.json")
           cfg = json.load(open(p)); cfg["threshold_pct"] = 0; cfg["endpoint_enabled"] = False
-          cfg["local_budget_weighted_tokens"] = 1000
+          cfg["local_budget_weighted_tokens"] = 100000
           json.dump(cfg, open(p, "w"))
           sp = os.path.expanduser("~/.claude/claude-powernap/state.json")
           if os.path.exists(sp):
@@ -55,6 +55,8 @@ jobs:
           python3 -c "import json; d=json.load(open('hook.json')); assert 'USAGE LIMIT WARNING' in d['hookSpecificOutput']['additionalContext']"
       - name: State lock concurrency
         run: python3 scripts/ci_lock_test.py
+      - name: Estimate sanity (garbage-budget guards)
+        run: python3 scripts/ci_estimate_sanity_test.py
       - name: Napping-session rescue
         run: python3 scripts/ci_rescue_test.py
       - name: Watcher dry-run + CLI
@@ -94,7 +96,7 @@ jobs:
       - name: Hook emission at threshold
         shell: pwsh
         run: |
-          python -c "import json,os; p=os.path.expandvars(r'%USERPROFILE%\.claude\claude-powernap\config.json'); cfg=json.load(open(p)); cfg.update(threshold_pct=0, endpoint_enabled=False, local_budget_weighted_tokens=1000); json.dump(cfg, open(p,'w'))"
+          python -c "import json,os; p=os.path.expandvars(r'%USERPROFILE%\.claude\claude-powernap\config.json'); cfg=json.load(open(p)); cfg.update(threshold_pct=0, endpoint_enabled=False, local_budget_weighted_tokens=100000); json.dump(cfg, open(p,'w'))"
           python -c "import json,os; sp=os.path.expandvars(r'%USERPROFILE%\.claude\claude-powernap\state.json'); st=json.load(open(sp)) if os.path.exists(sp) else {}; st['last_check']=0; json.dump(st, open(sp,'w'))"
           '{"session_id":"ci-test","hook_event_name":"PostToolUse"}' | python "$env:USERPROFILE\.claude\claude-powernap\usage_check.py" | Tee-Object hook.json
           python -c "import json; d=json.load(open('hook.json')); assert 'USAGE LIMIT WARNING' in d['hookSpecificOutput']['additionalContext']"
@@ -109,6 +111,9 @@ jobs:
       - name: State lock concurrency
         shell: pwsh
         run: python scripts\ci_lock_test.py
+      - name: Estimate sanity (garbage-budget guards)
+        shell: pwsh
+        run: python scripts\ci_estimate_sanity_test.py
       - name: Napping-session rescue
         shell: pwsh
         run: python scripts\ci_rescue_test.py
