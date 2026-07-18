@@ -213,6 +213,11 @@ def main():
     elif cmd in ("remove", "uninstall"):
         remove(purge=any(a.lower() in ("--purge", "-purge") for a in sys.argv[2:]))
     elif cmd == "watcher-setup":   # used by the plugin's /powernap:watcher command
+        # Deploy the files the scheduled job runs — plugin installs never ran
+        # setup(), and the job must not depend on the plugin dir's lifetime.
+        POWERNAP_DIR.mkdir(parents=True, exist_ok=True)
+        for name in ("powernap_common.py", "fallback_watch.py"):
+            shutil.copy(PKG_DIR / name, POWERNAP_DIR / name)
         print(f"watcher: {_schedule_watcher()}")
     elif cmd == "watcher-remove":
         _unschedule_watcher()
