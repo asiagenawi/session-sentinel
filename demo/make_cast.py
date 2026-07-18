@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Generate demo/powernap.cast (asciinema v2) for the README GIF.
 
-The transcript replays REAL outputs captured from an actual powernap cycle
-(2026-07-18) with presentation timing. Render with:
-  agg --font-size 15 demo/powernap.cast demo/powernap.gif
+Styled after the Claude Code TUI; the powernap outputs replay REAL events
+from an actual cycle (2026-07-18) with presentation timing. Render with:
+  agg --font-size 15 --theme monokai --last-frame-duration 4 demo/powernap.cast demo/powernap.gif
 """
 import json
 from pathlib import Path
 
-DIM, BOLD, YELLOW, GREEN, RESET = "\x1b[2m", "\x1b[1m", "\x1b[33m", "\x1b[32m", "\x1b[0m"
-PROMPT = "\x1b[35m❯\x1b[0m "
+DIM, BOLD, RESET = "\x1b[2m", "\x1b[1m", "\x1b[0m"
+YELLOW, GREEN, ORANGE, CYAN = "\x1b[33m", "\x1b[32m", "\x1b[38;5;209m", "\x1b[36m"
+W = 96
 
-events, t = [], 0.5
+events, t = [], 0.4
 
 
 def out(data, dt=0.0):
@@ -20,55 +21,79 @@ def out(data, dt=0.0):
     events.append([round(t, 3), "o", data])
 
 
-def type_cmd(cmd, pause_after=0.35):
-    out(PROMPT)
-    for ch in cmd:
-        out(ch, 0.045)
-    out("\r\n", pause_after)
-
-
-def line(text, dt=0.15, hold=0.0):
+def line(text="", dt=0.12, hold=0.0):
+    global t
     out(text + "\r\n", dt)
+    t += hold
+
+
+def typed(prefix, text, hold=0.5):
+    out(prefix)
+    for ch in text:
+        out(ch, 0.035)
+    out("\r\n", 0.15)
     global t
     t += hold
 
 
-type_cmd("claude-powernap status")
-line("enabled:   True")
-line("threshold: 90%")
-line("watcher:   loaded")
-line(f"5h window: {BOLD}89%{RESET}  (source: endpoint, resets 03:00AM EDT)")
-line("weekly:    34%  (guard off, resets Jul 22)", hold=2.0)
-line("")
+# ── Claude Code welcome banner ────────────────────────────────────────────
+line(f"{DIM}╭{'─' * (W - 2)}╮{RESET}")
+line(f"{DIM}│{RESET} {ORANGE}✳{RESET} {BOLD}Welcome to Claude Code!{RESET}{' ' * (W - 28)}{DIM}│{RESET}")
+line(f"{DIM}│{' ' * (W - 2)}│{RESET}")
+line(f"{DIM}│   /help for help · cwd: ~/Brevy/atlas{' ' * (W - 41)}│{RESET}")
+line(f"{DIM}╰{'─' * (W - 2)}╯{RESET}", hold=1.0)
+line()
 
-type_cmd("# meanwhile, a long automation is running in Claude Code…", 0.6)
-line(f"{DIM}· Working… (batch migration, 3 h 40 m in){RESET}", 0.4, hold=1.0)
-line(f"{DIM}⏺ Edit(src/parsers/feed.py) — updated 12 call sites{RESET}", hold=1.3)
-line("")
-line(f"{YELLOW}⚠ [claude-powernap] USAGE LIMIT WARNING: you have consumed 91% of the{RESET}", 0.35)
-line(f"{YELLOW}  5-hour usage window. The window resets at 03:00AM EDT. At the current{RESET}", 0.25)
-line(f"{YELLOW}  burn rate the limit is ~8 minutes away. Follow the pause protocol NOW.{RESET}", 0.25, hold=1.8)
-line("")
-line("⏺ I'm approaching the session limit — pausing gracefully.", hold=1.0)
-line("⏺ Write(~/.claude/claude-powernap/checkpoints/aeda6f64.md)", hold=0.9)
-line(f"  {DIM}└ work completed · current state · exact next steps{RESET}", hold=1.1)
-line("⏺ Scheduled one-shot resume at 03:03AM EDT.", hold=1.0)
-line("")
-line(f"{BOLD}Pausing until 03:03AM EDT — leave this terminal open.{RESET} 💤", hold=2.4)
-line("")
-line(f"{DIM}────────────────  3:03 AM — window has reset  ────────────────{RESET}", hold=1.8)
-line("")
-line(f"{GREEN}⏺ Session window has reset. Reading checkpoint…{RESET}", hold=1.1)
-line("⏺ Read(~/.claude/claude-powernap/checkpoints/aeda6f64.md)", hold=0.9)
-line("⏺ Resuming: 12 call sites done, continuing with src/parsers/atom.py", hold=1.2)
-line(f"{DIM}· Working…{RESET}", hold=2.0)
-line("")
+# ── the long automation ───────────────────────────────────────────────────
+typed(f"{DIM}>{RESET} ", "run the overnight batch migration across all 437 articles", 0.9)
+line()
+line("⏺ Starting the migration. I'll work through the parsers in order.", hold=1.1)
+line()
+line(f"⏺ {BOLD}Update{RESET}(src/parsers/feed.py)")
+line(f"  {DIM}⎿  Updated 12 call sites{RESET}", hold=1.2)
+line()
+line(f"{ORANGE}✻{RESET} {DIM}Working… (3h 40m elapsed · esc to interrupt){RESET}", hold=1.6)
+line()
 
-type_cmd("claude-powernap log")
-line(f"{DIM}01:07:32{RESET} WARN session=aeda6f64 pct=91 trigger=burn-rate projection source=endpoint")
-line(f"{DIM}03:03:05{RESET} resume: session aeda6f64 woke via scheduled task", hold=3.5)
+# ── the warning lands ─────────────────────────────────────────────────────
+line(f"{YELLOW}⚠ [claude-powernap] USAGE LIMIT WARNING: 91% of the 5-hour window consumed.{RESET}", 0.3)
+line(f"{YELLOW}  Resets 03:00AM EDT — at the current burn rate the limit is ~8 minutes away.{RESET}", 0.2, hold=1.8)
+line()
+line("⏺ I'm approaching the session limit — pausing gracefully instead of dying", 0.25)
+line("  mid-task.", hold=0.9)
+line()
+line(f"⏺ {BOLD}Write{RESET}(~/.claude/claude-powernap/checkpoints/aeda6f64.md)")
+line(f"  {DIM}⎿  Wrote 41 lines — work completed · current state · exact next steps{RESET}", hold=1.2)
+line()
+line(f"⏺ {BOLD}Scheduled task{RESET}(one-shot · 03:03AM EDT · \"resume from checkpoint\")", hold=1.1)
+line()
+line(f"⏺ {BOLD}Pausing until 03:03AM EDT — leave this terminal open.{RESET} 💤", hold=2.6)
+line()
 
-header = {"version": 2, "width": 100, "height": 30,
+# ── the reset ─────────────────────────────────────────────────────────────
+line(f"{DIM}{'─' * 34}  3:03 AM  {'─' * 34}{RESET}", hold=1.6)
+line()
+line(f"{DIM}>{RESET} {DIM}Session window has reset. Read the checkpoint and continue the work.{RESET}", 0.3, hold=1.3)
+line()
+line(f"⏺ {BOLD}Read{RESET}(~/.claude/claude-powernap/checkpoints/aeda6f64.md)")
+line(f"  {DIM}⎿  41 lines{RESET}", hold=1.0)
+line()
+line(f"⏺ {GREEN}Back from the powernap.{RESET} 12 call sites done — continuing with", 0.25)
+line("  src/parsers/atom.py.", hold=1.1)
+line()
+line(f"⏺ {BOLD}Update{RESET}(src/parsers/atom.py)")
+line(f"  {DIM}⎿  Updated 9 call sites{RESET}", hold=1.0)
+line()
+line(f"{ORANGE}✻{RESET} {DIM}Working…{RESET}", hold=1.8)
+line()
+
+# ── idle input box ────────────────────────────────────────────────────────
+line(f"{DIM}╭{'─' * (W - 2)}╮{RESET}")
+line(f"{DIM}│{RESET} > {' ' * (W - 6)}{DIM}│{RESET}")
+line(f"{DIM}╰{'─' * (W - 2)}╯{RESET}")
+line(f"  {DIM}? for shortcuts{RESET}", hold=3.0)
+
+header = {"version": 2, "width": 100, "height": 42,
           "title": "claude-powernap demo",
           "env": {"TERM": "xterm-256color", "SHELL": "/bin/zsh"}}
 cast = Path(__file__).parent / "powernap.cast"
