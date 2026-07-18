@@ -22,13 +22,8 @@ You've hit your session limit · resets 3:00am
 Everything since the last commit is in limbo. The context that session had
 built up is sitting frozen mid-thought. And the limit reset hours ago — the
 session just had no way to know, no way to save itself, and no way to come
-back. Your subscription's 5-hour window refilled while your automation sat
+back. Your subscription's 5-hour window reset while your automation sat
 dead in a terminal.
-
-Existing tools handle this the blunt way: they watch for the *corpse* — the
-session that already hit the wall — and mash "continue" at it after the
-reset. That works, but the session still died mid-tool-call, with no chance
-to wrap up.
 
 ## The idea
 
