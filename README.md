@@ -33,7 +33,7 @@ Free, local, dependency-free (Python 3 stdlib only). macOS.
 ## Install
 
 ```bash
-git clone <this-repo> && cd session-sentinel
+git clone https://github.com/asiagenawi/session-sentinel.git && cd session-sentinel
 ./install.sh
 ```
 
