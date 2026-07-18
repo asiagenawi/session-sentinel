@@ -39,13 +39,16 @@ def build_warning(pct, resets_iso, session_id, cfg, source, projected=None):
         f"1. Do NOT start new work. Finish or safely stop the current step only.\n"
         f"2. Write a checkpoint file to {ckpt} covering: work completed, current "
         f"state, and exact next steps so you can resume cold.\n"
-        f"3. Create a ONE-SHOT scheduled task (scheduled-tasks / cron capability) "
-        f"firing at {resume_at} with this prompt: 'Session window has reset. Read "
-        f"{ckpt} and continue the work from where it left off.'\n"
+        f"3. SCHEDULE YOUR OWN WAKE-UP — this step is what makes the pause "
+        f"recoverable. Create a ONE-SHOT scheduled task (via your scheduled-tasks "
+        f"/ cron capability, e.g. CronCreate) that fires at {resume_at} with this "
+        f"prompt: 'Session window has reset. Read {ckpt} and continue the work "
+        f"from where it left off.' Without this wake-up task the session will "
+        f"sit idle after the reset instead of resuming.\n"
         f"4. Tell the user you are pausing until {resume_at}, then END your turn "
         f"and idle. Do not keep working past this warning.\n"
-        f"If you cannot create scheduled tasks, still write the checkpoint, then "
-        f"tell the user to send any message after {resume_at} to resume."
+        f"If you have no scheduled-task capability, still write the checkpoint, "
+        f"then tell the user to send any message after {resume_at} to resume."
     )
 
 
