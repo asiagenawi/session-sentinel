@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Syntax check
         run: |
-          python3 -m py_compile powernap/*.py scripts/*.py bin/claude-powernap
+          python3 -m py_compile src/claude_powernap/*.py scripts/*.py
           bash -n install.sh uninstall.sh
       - name: Install
         run: ./install.sh
@@ -73,7 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Syntax check
-        run: python -m py_compile powernap/powernap_common.py powernap/usage_check.py powernap/fallback_watch.py scripts/hooks_config.py bin/claude-powernap
+        run: python -m py_compile src/claude_powernap/powernap_common.py src/claude_powernap/usage_check.py src/claude_powernap/fallback_watch.py src/claude_powernap/hooks_config.py src/claude_powernap/cli.py
       - name: Install
         shell: pwsh
         run: .\install.ps1
@@ -120,3 +120,18 @@ jobs:
           .\uninstall.ps1 -Purge
           python -c "import json,os; s=json.load(open(os.path.expandvars(r'%USERPROFILE%\.claude\settings.json'))); assert 'claude-powernap' not in json.dumps(s)"
           $r = schtasks /query /tn claude-powernap-watcher 2>&1; if ($LASTEXITCODE -eq 0) { throw "task still exists" } else { exit 0 }
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sdist + wheel
+        run: pipx run build
+      - name: Install wheel and smoke-test entry point
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install -q dist/*.whl
+          /tmp/venv/bin/claude-powernap version
+          /tmp/venv/bin/claude-powernap setup
+          "$HOME/.local/bin/claude-powernap" version
+          /tmp/venv/bin/claude-powernap remove --purge

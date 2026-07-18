@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "claude-powernap"
+version = "0.3.0"
+description = "Your Claude Code session sees the 5-hour limit coming, checkpoints its work, and resumes itself when the window resets."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "asiagenawi" }]
+keywords = ["claude", "claude-code", "anthropic", "usage-limit", "rate-limit", "auto-resume"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Build Tools",
+]
+
+[project.urls]
+Homepage = "https://github.com/asiagenawi/claude-powernap"
+Changelog = "https://github.com/asiagenawi/claude-powernap/blob/main/CHANGELOG.md"
+
+[project.scripts]
+claude-powernap = "claude_powernap.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/claude_powernap"]

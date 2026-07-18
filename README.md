@@ -58,32 +58,37 @@ notification instead — it will never fork a live session.
 | usage monitors (ccusage, claude-monitor) | ⚠️ warns *you*, not the session | ❌ | ❌ | — |
 | auto-retriers (unsnooze, claude-auto-retry, …) | ❌ reacts after death | ❌ dies mid-thought | ✅ | mostly yes |
 
-Free, local, no dependencies (Python 3 stdlib only). macOS, Linux (incl.
+Free, privacy-first, local-only, no dependencies (Python 3 stdlib only). macOS, Linux (incl.
 WSL), native Windows (experimental).
 
 ## Install
 
+From PyPI (all platforms):
+
+```bash
+uvx claude-powernap setup        # or: pipx install claude-powernap && claude-powernap setup
+```
+
+Or from a clone, if you'd rather read what you run first:
+
 ```bash
 git clone https://github.com/asiagenawi/claude-powernap.git && cd claude-powernap
-./install.sh        # macOS / Linux / WSL
+./install.sh        # macOS / Linux / WSL — same as `claude-powernap setup`
 ```
 
-Native Windows (PowerShell 7 recommended):
-
-```powershell
-git clone https://github.com/asiagenawi/claude-powernap.git; cd claude-powernap
-.\install.ps1
-```
+Native Windows clone (PowerShell 7 recommended): `.\install.ps1`
 
 That's the whole setup. Every Claude Code session on the machine is covered —
 no per-project config, no special launcher, no flags to remember. Start your
 long automations exactly the way you already do.
 
-The installer is deliberately boring and inspectable: it copies a few Python
-files to `~/.claude/claude-powernap/`, merges three hook entries into
+Setup is deliberately boring and inspectable: it copies a few Python files
+to `~/.claude/claude-powernap/`, merges three hook entries into
 `~/.claude/settings.json` (backing it up first), and schedules the fallback
-watcher (launchd / systemd user timer / Task Scheduler). `uninstall.sh`
-reverses all of it.
+watcher (launchd / systemd user timer / Task Scheduler).
+`claude-powernap remove` (or `./uninstall.sh`) reverses all of it. If you
+set `CLAUDE_CONFIG_DIR`, setup follows it — run setup from a normal shell,
+not from inside a Claude Code session, so the right settings file is edited.
 
 On macOS the first usage check may trigger one Keychain prompt — the monitor
 reads Claude Code's own OAuth token to ask Anthropic for your real usage
@@ -114,11 +119,26 @@ claude-powernap log      # what the watcher and monitor have been doing
 | `headless_resume_extra_args` | `[]` | extra flags for last-resort headless resume |
 | `local_budget_weighted_tokens` | `null` | manual budget for local estimation |
 
+## Plays by the rules
+
+claude-powernap works *with* the usage limit, not around it:
+
+- **Zero extra usage.** The same quota, consumed the same way. It never
+  gets you more tokens — it just stops a session from dying mid-thought
+  and picks the work back up when your own window resets.
+- **Genuine client, official hooks.** Everything runs inside the real
+  Claude Code client through its documented hooks system. It never spoofs
+  a client identity and never touches permission systems.
+- **Privacy-first, local-only.** Checkpoints, transcripts, config — all of
+  it stays on your machine. The one outbound call is the same usage query
+  the built-in `/usage` screen makes, and `endpoint_enabled: false` turns
+  even that off.
+
 ## Caveats
 
 - **Undocumented usage endpoint** — exact percentages come from the same
   unpublished API `/usage` uses (read-only, via the OAuth token already on
-  your machine; a ToS gray area). Worked around: if the endpoint fails or
+  your machine; a ToS gray area). Handled: if the endpoint fails or
   you set `endpoint_enabled: false`, the tool switches automatically to
   local transcript estimation, self-calibrated whenever endpoint data was
   available.

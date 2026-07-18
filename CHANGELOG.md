@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [0.3.0] - 2026-07-18
+
+### Added
+- **PyPI packaging**: installable via `pip install claude-powernap` /
+  `uvx claude-powernap setup`; new `setup` / `remove` CLI subcommands replace
+  the platform installer scripts (install.sh/.ps1 remain as thin wrappers).
+- `claude-powernap version` command.
+- CI: package build + wheel install + entry-point smoke test job; PyPI
+  publish workflow on GitHub releases (trusted publishing).
+
+### Changed
+- Repo restructured to a src-layout Python package (`src/claude_powernap/`);
+  install logic consolidated into one cross-platform code path.
+
 ## [0.2.0] - 2026-07-18
 
 ### Added
