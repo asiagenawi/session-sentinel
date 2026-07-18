@@ -117,7 +117,7 @@ claude-powernap log      # what the watcher and monitor have been doing
 - **Undocumented usage endpoint** — exact percentages come from the same
   unpublished API `/usage` uses (read-only, via the OAuth token already on
   your machine; a ToS gray area). Worked around: if the endpoint fails or
-  you set `endpoint_enabled: false`, the tool degrades automatically to
+  you set `endpoint_enabled: false`, the tool switches automatically to
   local transcript estimation, self-calibrated whenever endpoint data was
   available.
 - **The paused session must stay open** — that's the point. If its alarm
