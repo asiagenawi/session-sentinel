@@ -20,6 +20,8 @@ LOG_PATH = SENTINEL_DIR / "sentinel.log"
 
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 KEYCHAIN_SERVICE_PREFIX = "Claude Code-credentials"
+IS_MAC = sys.platform == "darwin"
+CREDENTIALS_FILE = CLAUDE_DIR / ".credentials.json"  # Linux/WSL token location
 
 DEFAULT_CONFIG = {
     "enabled": True,
@@ -81,7 +83,15 @@ def _keychain_services():
 
 
 def get_oauth_token(state):
-    """Freshest unexpired OAuth access token, trying cached service name first."""
+    """Freshest unexpired OAuth access token (Keychain on macOS, file elsewhere)."""
+    if not IS_MAC:
+        try:
+            with open(CREDENTIALS_FILE) as f:
+                oauth = json.load(f).get("claudeAiOauth", {})
+            tok, exp = oauth.get("accessToken"), oauth.get("expiresAt", 0)
+            return tok if tok and exp > time.time() * 1000 + 60_000 else None
+        except (OSError, json.JSONDecodeError):
+            return None
     candidates = []
     cached = state.get("keychain_service")
     services = _keychain_services()

@@ -7,7 +7,8 @@ schedules its own resumption for the moment the window resets, and continues
 in the **same open terminal session**. A background watcher catches the cases
 where the limit is hit anyway.
 
-Free, local, dependency-free (Python 3 stdlib only). macOS.
+Free, local, dependency-free (Python 3 stdlib only). macOS and Linux
+(incl. WSL); native Windows not yet supported.
 
 ## How it works
 
@@ -62,7 +63,7 @@ claude-sentinel log      # recent sentinel activity
 | `threshold_pct` | `90` | warn/pause threshold for the 5h window |
 | `check_interval_s` | `120` | min seconds between usage checks |
 | `endpoint_enabled` | `true` | `false` = fully local estimation only |
-| `terminal_app` | `Terminal` | `Terminal` or `iTerm2` for fallback windows |
+| `terminal_app` | `Terminal` | macOS: `Terminal`/`iTerm2`; Linux: terminal binary name (auto-detected if unset) |
 | `resume_grace_min` | `3` | schedule resume this long after reset |
 | `headless_resume_extra_args` | `[]` | extra flags for last-resort headless resume |
 | `local_budget_weighted_tokens` | `null` | manual budget for local estimation |
@@ -77,9 +78,14 @@ claude-sentinel log      # recent sentinel activity
   from past limit hits; keep the threshold conservative when relying on it.
 - The paused session must stay open (that's the point); the scheduled-task
   resume relies on Claude Code's native scheduled-tasks feature.
-- macOS only for now (Keychain, launchd, osascript). Linux port: PRs welcome —
-  the hook/monitor half is portable, the watcher needs systemd timers +
-  libsecret + a terminal spawner.
+- **Platforms**: macOS uses Keychain + launchd + osascript. Linux uses
+  `~/.claude/.credentials.json` + a systemd user timer + `notify-send` and
+  auto-detects your terminal emulator (gnome-terminal, konsole, kitty,
+  alacritty, xterm, …; set `terminal_app` to a binary name to override).
+  Headless Linux servers work too — the watcher just falls straight to
+  headless resume. Run `loginctl enable-linger $USER` if you want the watcher
+  active while logged out. Native Windows: not yet (PRs welcome); WSL works
+  via the Linux path.
 
 ## Uninstall
 

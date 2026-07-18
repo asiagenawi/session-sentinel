@@ -17,8 +17,20 @@ sys.path.insert(0, str(SENTINEL_DIR))
 from sentinel_common import (CONFIG_PATH, LOG_PATH, fmt_local, load_config,
                              load_state, save_state, get_usage)
 
+IS_MAC = sys.platform == "darwin"
 PLIST = Path.home() / "Library" / "LaunchAgents" / "com.session-sentinel.watcher.plist"
 LABEL = "com.session-sentinel.watcher"
+TIMER = "session-sentinel.timer"
+
+
+def set_watcher(value):
+    if IS_MAC:
+        if PLIST.exists():
+            action = ["load", "-w", str(PLIST)] if value else ["unload", "-w", str(PLIST)]
+            subprocess.run(["launchctl", *action], capture_output=True)
+    else:
+        action = ["enable", "--now", TIMER] if value else ["disable", "--now", TIMER]
+        subprocess.run(["systemctl", "--user", *action], capture_output=True)
 
 
 def set_enabled(value):
@@ -26,17 +38,17 @@ def set_enabled(value):
     cfg["enabled"] = value
     with open(CONFIG_PATH, "w") as f:
         json.dump(cfg, f, indent=2)
-    if PLIST.exists():
-        if value:
-            subprocess.run(["launchctl", "load", "-w", str(PLIST)], capture_output=True)
-        else:
-            subprocess.run(["launchctl", "unload", "-w", str(PLIST)], capture_output=True)
+    set_watcher(value)
     print(f"session-sentinel {'ON — monitoring all Claude Code sessions' if value else 'OFF'}")
 
 
 def watcher_loaded():
-    r = subprocess.run(["launchctl", "list"], capture_output=True, text=True)
-    return LABEL in r.stdout
+    if IS_MAC:
+        r = subprocess.run(["launchctl", "list"], capture_output=True, text=True)
+        return LABEL in r.stdout
+    r = subprocess.run(["systemctl", "--user", "is-active", TIMER],
+                       capture_output=True, text=True)
+    return r.stdout.strip() == "active"
 
 
 def status():

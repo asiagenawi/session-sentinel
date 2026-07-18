@@ -1,0 +1,6 @@
+[Unit]
+Description=session-sentinel fallback watcher (resume Claude Code sessions after limit reset)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env python3 %h/.claude/session-sentinel/fallback_watch.py

@@ -51,11 +51,24 @@ with open(path, "w") as f:
 print("hooks registered in", path, "(backup: settings.json.sentinel-backup)")
 PY
 
-# 3. launchd fallback watcher
-sed "s|__HOME__|$HOME|g" "$REPO_DIR/launchd/com.session-sentinel.watcher.plist.template" > "$PLIST_DST"
-launchctl unload "$PLIST_DST" 2>/dev/null || true
-launchctl load -w "$PLIST_DST"
-echo "fallback watcher loaded (launchd: com.session-sentinel.watcher)"
+# 3. fallback watcher (launchd on macOS, systemd user timer on Linux)
+if [ "$(uname)" = "Darwin" ]; then
+    sed "s|__HOME__|$HOME|g" "$REPO_DIR/launchd/com.session-sentinel.watcher.plist.template" > "$PLIST_DST"
+    launchctl unload "$PLIST_DST" 2>/dev/null || true
+    launchctl load -w "$PLIST_DST"
+    echo "fallback watcher loaded (launchd: com.session-sentinel.watcher)"
+elif command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then
+    mkdir -p "$HOME/.config/systemd/user"
+    cp "$REPO_DIR/systemd/session-sentinel.service" "$REPO_DIR/systemd/session-sentinel.timer" \
+       "$HOME/.config/systemd/user/"
+    systemctl --user daemon-reload
+    systemctl --user enable --now session-sentinel.timer
+    echo "fallback watcher loaded (systemd user timer: session-sentinel.timer)"
+    echo "NOTE: for the watcher to run while logged out: loginctl enable-linger $USER"
+else
+    echo "WARNING: no launchd/systemd — fallback watcher not scheduled."
+    echo "Add to crontab manually: */2 * * * * python3 $SENTINEL_DIR/fallback_watch.py"
+fi
 
 echo
 echo "Done. Commands:  claude-sentinel status | on | off | log"

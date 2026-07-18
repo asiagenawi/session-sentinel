@@ -18,8 +18,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sentinel_common import (CHECKPOINT_DIR, PROJECTS_DIR, fmt_local,
+from sentinel_common import (CHECKPOINT_DIR, IS_MAC, PROJECTS_DIR, fmt_local,
                              load_config, load_state, log, save_state)
+
+# (binary, flags-before-command) pairs, tried in order on Linux
+LINUX_TERMINALS = [
+    ("x-terminal-emulator", ["-e"]), ("gnome-terminal", ["--"]),
+    ("konsole", ["-e"]), ("xfce4-terminal", ["-x"]),
+    ("kitty", []), ("alacritty", ["-e"]), ("xterm", ["-e"]),
+]
 
 RESET_RE = re.compile(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?(?:\s*\(([^)]+)\))?",
                       re.IGNORECASE)
@@ -95,10 +102,25 @@ def transcript_holders(path):
     """PIDs holding the transcript open (claude keeps its session file open)."""
     try:
         out = subprocess.run(["lsof", "-t", str(path)], capture_output=True,
-                             text=True, timeout=10).stdout.split()
-        return [int(p) for p in out]
+                             text=True, timeout=10)
+        if out.returncode in (0, 1):  # 1 = ran fine, no holders
+            return [int(p) for p in out.stdout.split()]
     except Exception:
+        pass
+    if IS_MAC:
         return []
+    # Linux fallback when lsof is missing: scan /proc/*/fd symlinks.
+    pids = []
+    target = str(Path(path).resolve())
+    for fd_dir in Path("/proc").glob("[0-9]*/fd"):
+        try:
+            for fd in fd_dir.iterdir():
+                if str(fd.resolve()) == target:
+                    pids.append(int(fd_dir.parent.name))
+                    break
+        except (OSError, PermissionError):
+            continue
+    return pids
 
 
 def resume_prompt(session_id):
@@ -111,6 +133,18 @@ def resume_prompt(session_id):
 def open_terminal_resume(cwd, session_id, cfg):
     prompt = resume_prompt(session_id).replace('"', '\\"')
     shell_cmd = f'cd {cwd} && claude --resume {session_id} "{prompt}"'
+    if not IS_MAC:
+        import shutil
+        preferred = cfg.get("terminal_app")
+        terms = ([(preferred, ["-e"])] if preferred and preferred not in
+                 ("Terminal", "iTerm2") else []) + LINUX_TERMINALS
+        for term, flags in terms:
+            if term and shutil.which(term):
+                subprocess.Popen(
+                    [term, *flags, "bash", "-c", f"{shell_cmd}; exec bash"],
+                    start_new_session=True)
+                return
+        raise RuntimeError("no terminal emulator found")
     app = cfg.get("terminal_app", "Terminal")
     if app == "iTerm2":
         script = (f'tell application "iTerm2"\n activate\n'
@@ -127,9 +161,15 @@ def open_terminal_resume(cwd, session_id, cfg):
 
 
 def notify(title, message):
-    subprocess.run(["osascript", "-e",
-                    f'display notification "{message}" with title "{title}"'],
-                   capture_output=True, timeout=10)
+    if IS_MAC:
+        cmd = ["osascript", "-e",
+               f'display notification "{message}" with title "{title}"']
+    else:
+        cmd = ["notify-send", title, message]
+    try:
+        subprocess.run(cmd, capture_output=True, timeout=10)
+    except Exception:
+        pass  # notification is best-effort everywhere
 
 
 def headless_resume(cwd, session_id, cfg):
