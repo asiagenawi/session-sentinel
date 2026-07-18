@@ -90,6 +90,7 @@ jobs:
         shell: pwsh
         run: |
           python -c "import json,os; p=os.path.expandvars(r'%USERPROFILE%\.claude\session-sentinel\config.json'); cfg=json.load(open(p)); cfg.update(threshold_pct=0, endpoint_enabled=False, local_budget_weighted_tokens=1000); json.dump(cfg, open(p,'w'))"
+          python -c "import json,os; sp=os.path.expandvars(r'%USERPROFILE%\.claude\session-sentinel\state.json'); st=json.load(open(sp)) if os.path.exists(sp) else {}; st['last_check']=0; json.dump(st, open(sp,'w'))"
           '{"session_id":"ci-test","hook_event_name":"PostToolUse"}' | python "$env:USERPROFILE\.claude\session-sentinel\usage_check.py" | Tee-Object hook.json
           python -c "import json; d=json.load(open('hook.json')); assert 'USAGE LIMIT WARNING' in d['hookSpecificOutput']['additionalContext']"
       - name: Watcher dry-run + CLI
