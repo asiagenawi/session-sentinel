@@ -212,6 +212,11 @@ def main():
         setup()
     elif cmd in ("remove", "uninstall"):
         remove(purge=any(a.lower() in ("--purge", "-purge") for a in sys.argv[2:]))
+    elif cmd == "watcher-setup":   # used by the plugin's /powernap:watcher command
+        print(f"watcher: {_schedule_watcher()}")
+    elif cmd == "watcher-remove":
+        _unschedule_watcher()
+        print("watcher unscheduled")
     elif cmd == "on":
         set_enabled(True)
     elif cmd == "off":

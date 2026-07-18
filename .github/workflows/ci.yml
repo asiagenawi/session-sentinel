@@ -16,6 +16,7 @@ jobs:
         run: |
           python3 -m py_compile src/claude_powernap/*.py scripts/*.py
           bash -n install.sh uninstall.sh
+          python3 -c "import json; [json.load(open(f)) for f in ('.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', 'hooks/hooks.json')]" 
       - name: Install
         run: ./install.sh
       - name: Fixture transcript

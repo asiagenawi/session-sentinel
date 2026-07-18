@@ -10,6 +10,12 @@ versioning: [SemVer](https://semver.org/).
 - **PyPI packaging**: installable via `pip install claude-powernap` /
   `uvx claude-powernap setup`; new `setup` / `remove` CLI subcommands replace
   the platform installer scripts (install.sh/.ps1 remain as thin wrappers).
+- **Claude Code plugin**: the repo is its own marketplace —
+  `/plugin marketplace add asiagenawi/claude-powernap` then
+  `/plugin install powernap@claude-powernap`. Hooks activate with no file
+  deployment; `/powernap:watcher` schedules the OS-level fallback watcher;
+  `/powernap:status` and `/powernap:toggle` included
+  (`watcher-setup`/`watcher-remove` CLI subcommands back them).
 - `claude-powernap version` command.
 - CI: package build + wheel install + entry-point smoke test job; PyPI
   publish workflow on GitHub releases (trusted publishing).

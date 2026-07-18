@@ -1,0 +1,11 @@
+{
+  "name": "claude-powernap",
+  "owner": { "name": "asiagenawi", "url": "https://github.com/asiagenawi" },
+  "plugins": [
+    {
+      "name": "powernap",
+      "source": "./",
+      "description": "Warns your session near the 5-hour usage limit so it checkpoints, pauses, and resumes itself when the window resets. Zero extra usage — it works with the limit, not around it."
+    }
+  ]
+}

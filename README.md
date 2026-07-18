@@ -63,6 +63,18 @@ WSL), native Windows (experimental).
 
 ## Install
 
+As a Claude Code plugin (inside any Claude Code session):
+
+```
+/plugin marketplace add asiagenawi/claude-powernap
+/plugin install powernap@claude-powernap
+```
+
+The plugin activates the monitoring hooks immediately — no file deployment at
+all. Then run `/powernap:watcher` once to schedule the fallback watcher (an
+OS-level background job, which plugins can't register on their own). Also
+ships `/powernap:status` and `/powernap:toggle on|off`.
+
 From PyPI (all platforms):
 
 ```bash
@@ -77,6 +89,9 @@ git clone https://github.com/asiagenawi/claude-powernap.git && cd claude-powerna
 ```
 
 Native Windows clone (PowerShell 7 recommended): `.\install.ps1`
+
+Pick ONE install method — plugin or pip/clone. (Both at once is harmless —
+the shared state throttle makes duplicate checks no-ops — but pointless.)
 
 That's the whole setup. Every Claude Code session on the machine is covered —
 no per-project config, no special launcher, no flags to remember. Start your
