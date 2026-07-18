@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "threshold_pct": 90,
+  "check_interval_s": 120,
+  "endpoint_enabled": true,
+  "terminal_app": "Terminal",
+  "resume_grace_min": 3,
+  "headless_resume_extra_args": [],
+  "local_budget_weighted_tokens": null,
+  "token_weights": {"input": 1.0, "output": 3.0, "cache_creation": 1.0, "cache_read": 0.1}
+}
