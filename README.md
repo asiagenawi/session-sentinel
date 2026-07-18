@@ -9,6 +9,8 @@
 **Your Claude Code session sees the usage limit coming, saves its work, and
 resumes itself when the window resets. You do nothing.**
 
+![claude-powernap demo: a session gets warned at 91%, checkpoints, pauses, and self-resumes after the window resets](demo/powernap.gif)
+
 ## The problem
 
 You kick off a long Claude Code automation — a big refactor, a batch
