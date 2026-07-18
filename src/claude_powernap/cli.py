@@ -19,13 +19,13 @@ from pathlib import Path
 try:
     from .powernap_common import (CONFIG_PATH, LOG_PATH, POWERNAP_DIR, CLAUDE_DIR,
                                   fmt_local, load_config, load_state, save_state,
-                                  state_lock, get_usage)
+                                  state_lock, get_usage, VERSION)
     from . import hooks_config
 except ImportError:  # running as a flat deployed script
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from powernap_common import (CONFIG_PATH, LOG_PATH, POWERNAP_DIR, CLAUDE_DIR,
                                  fmt_local, load_config, load_state, save_state,
-                                 state_lock, get_usage)
+                                 state_lock, get_usage, VERSION)
     import hooks_config
 
 PKG_DIR = Path(__file__).resolve().parent
@@ -259,11 +259,7 @@ def main():
         except OSError:
             print("(no log yet)")
     elif cmd in ("--version", "version"):
-        try:
-            from . import __version__
-        except ImportError:
-            __version__ = "unknown (deployed copy)"
-        print(__version__)
+        print(VERSION)
     else:
         print(__doc__)
         sys.exit(1)

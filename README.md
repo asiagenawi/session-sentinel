@@ -80,8 +80,13 @@ The plugin activates the monitoring hooks immediately. The one thing a
 plugin can't do itself is register the fallback watcher (an OS-level
 background job) — so on first run the hook notices it's missing and has the
 session offer you the one command to set it up (or run `/powernap:watcher`
-yourself anytime). Also ships `/powernap:status` and `/powernap:toggle
-on|off`.
+yourself anytime). Also ships `/powernap:status`, `/powernap:on`, and
+`/powernap:off`.
+
+If the `/powernap:*` commands don't appear after installing: restart the
+Claude Code session (plugin commands register at session start), and if the
+interactive install didn't take, run
+`claude plugin install powernap@claude-powernap` from a terminal instead.
 
 From PyPI (all platforms):
 

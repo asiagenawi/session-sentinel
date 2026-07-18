@@ -19,6 +19,7 @@ STATE_PATH = POWERNAP_DIR / "state.json"
 CHECKPOINT_DIR = POWERNAP_DIR / "checkpoints"
 LOG_PATH = POWERNAP_DIR / "powernap.log"
 
+VERSION = "0.3.1"  # single source for deployed copies (UA, cli version)
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 KEYCHAIN_SERVICE_PREFIX = "Claude Code-credentials"
 IS_MAC = sys.platform == "darwin"
@@ -200,7 +201,7 @@ def get_usage_from_endpoint(state):
         "anthropic-beta": "oauth-2025-04-20",
         "Content-Type": "application/json",
         # Honest self-identification (verified accepted by the endpoint).
-        "User-Agent": "claude-powernap/0.3.0 (github.com/asiagenawi/claude-powernap)",
+        "User-Agent": f"claude-powernap/{VERSION} (github.com/asiagenawi/claude-powernap)",
     })
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:

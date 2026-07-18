@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [0.3.1] - 2026-07-18
+
+### Changed
+- Plugin: `/powernap:toggle on|off` split into argument-free `/powernap:on`
+  and `/powernap:off` (first-user testing showed the argument form invited
+  mistyping).
+- `claude-powernap version` now reports the real version from deployed
+  copies too (shared VERSION constant, also used in the User-Agent).
+
+### Added
+- README: plugin troubleshooting (restart to register commands; CLI install
+  fallback when the interactive install doesn't persist).
+
 ## [0.3.0] - 2026-07-18
 
 ### Added
