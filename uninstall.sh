@@ -1,28 +1,28 @@
 #!/bin/bash
-# session-sentinel uninstaller. --purge also deletes state/checkpoints/logs.
+# claude-powernap uninstaller. --purge also deletes state/checkpoints/logs.
 set -euo pipefail
-SENTINEL_DIR="$HOME/.claude/session-sentinel"
+POWERNAP_DIR="$HOME/.claude/claude-powernap"
 SETTINGS="$HOME/.claude/settings.json"
-PLIST="$HOME/Library/LaunchAgents/com.session-sentinel.watcher.plist"
+PLIST="$HOME/Library/LaunchAgents/com.claude-powernap.watcher.plist"
 
 if [ "$(uname)" = "Darwin" ]; then
     launchctl unload "$PLIST" 2>/dev/null || true
     rm -f "$PLIST"
 else
-    systemctl --user disable --now session-sentinel.timer 2>/dev/null || true
-    rm -f "$HOME/.config/systemd/user/session-sentinel.service" \
-          "$HOME/.config/systemd/user/session-sentinel.timer"
+    systemctl --user disable --now claude-powernap.timer 2>/dev/null || true
+    rm -f "$HOME/.config/systemd/user/claude-powernap.service" \
+          "$HOME/.config/systemd/user/claude-powernap.timer"
     systemctl --user daemon-reload 2>/dev/null || true
 fi
-rm -f "$HOME/.local/bin/claude-sentinel"
+rm -f "$HOME/.local/bin/claude-powernap"
 
 python3 "$(cd "$(dirname "$0")" && pwd)/scripts/hooks_config.py" unregister "$SETTINGS"
 
 if [ "${1:-}" = "--purge" ]; then
-    rm -rf "$SENTINEL_DIR"
-    echo "purged $SENTINEL_DIR"
+    rm -rf "$POWERNAP_DIR"
+    echo "purged $POWERNAP_DIR"
 else
-    rm -f "$SENTINEL_DIR"/*.py
-    echo "kept config/state/checkpoints in $SENTINEL_DIR (use --purge to delete)"
+    rm -f "$POWERNAP_DIR"/*.py
+    echo "kept config/state/checkpoints in $POWERNAP_DIR (use --purge to delete)"
 fi
-echo "session-sentinel uninstalled"
+echo "claude-powernap uninstalled"

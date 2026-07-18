@@ -3,18 +3,18 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.session-sentinel.watcher</string>
+    <string>com.claude-powernap.watcher</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>__HOME__/.claude/session-sentinel/fallback_watch.py</string>
+        <string>__HOME__/.claude/claude-powernap/fallback_watch.py</string>
     </array>
     <key>StartInterval</key>
     <integer>120</integer>
     <key>RunAtLoad</key>
     <true/>
     <key>StandardErrorPath</key>
-    <string>__HOME__/.claude/session-sentinel/watcher.err.log</string>
+    <string>__HOME__/.claude/claude-powernap/watcher.err.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>

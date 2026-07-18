@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Syntax check
         run: |
-          python3 -m py_compile sentinel/*.py scripts/*.py bin/claude-sentinel
+          python3 -m py_compile powernap/*.py scripts/*.py bin/claude-powernap
           bash -n install.sh uninstall.sh
       - name: Install
         run: ./install.sh
@@ -35,47 +35,47 @@ jobs:
           PY
       - name: Monitor (local source)
         run: |
-          python3 "$HOME/.claude/session-sentinel/usage_check.py" --debug --force-local | tee out.json
+          python3 "$HOME/.claude/claude-powernap/usage_check.py" --debug --force-local | tee out.json
           python3 -c "import json; d=json.load(open('out.json')); assert d['source']=='local', d"
       - name: Hook emission at threshold
         run: |
           python3 - <<'PY'
           import json, os
-          p = os.path.expanduser("~/.claude/session-sentinel/config.json")
+          p = os.path.expanduser("~/.claude/claude-powernap/config.json")
           cfg = json.load(open(p)); cfg["threshold_pct"] = 0; cfg["endpoint_enabled"] = False
           cfg["local_budget_weighted_tokens"] = 1000
           json.dump(cfg, open(p, "w"))
-          sp = os.path.expanduser("~/.claude/session-sentinel/state.json")
+          sp = os.path.expanduser("~/.claude/claude-powernap/state.json")
           if os.path.exists(sp):
               st = json.load(open(sp)); st["last_check"] = 0; json.dump(st, open(sp, "w"))
           PY
           echo '{"session_id":"ci-test","hook_event_name":"PostToolUse"}' \
-            | python3 "$HOME/.claude/session-sentinel/usage_check.py" | tee hook.json
+            | python3 "$HOME/.claude/claude-powernap/usage_check.py" | tee hook.json
           python3 -c "import json; d=json.load(open('hook.json')); assert 'USAGE LIMIT WARNING' in d['hookSpecificOutput']['additionalContext']"
       - name: Watcher dry-run + CLI
         run: |
-          python3 "$HOME/.claude/session-sentinel/fallback_watch.py" --dry-run
-          "$HOME/.local/bin/claude-sentinel" status
-          "$HOME/.local/bin/claude-sentinel" off
-          "$HOME/.local/bin/claude-sentinel" on
-          "$HOME/.local/bin/claude-sentinel" log
+          python3 "$HOME/.claude/claude-powernap/fallback_watch.py" --dry-run
+          "$HOME/.local/bin/claude-powernap" status
+          "$HOME/.local/bin/claude-powernap" off
+          "$HOME/.local/bin/claude-powernap" on
+          "$HOME/.local/bin/claude-powernap" log
       - name: Uninstall
         run: |
           ./uninstall.sh --purge
-          python3 -c "import json,os; s=json.load(open(os.path.expanduser('~/.claude/settings.json'))); assert 'session-sentinel' not in json.dumps(s)"
+          python3 -c "import json,os; s=json.load(open(os.path.expanduser('~/.claude/settings.json'))); assert 'claude-powernap' not in json.dumps(s)"
 
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Syntax check
-        run: python -m py_compile sentinel/sentinel_common.py sentinel/usage_check.py sentinel/fallback_watch.py scripts/hooks_config.py bin/claude-sentinel
+        run: python -m py_compile powernap/powernap_common.py powernap/usage_check.py powernap/fallback_watch.py scripts/hooks_config.py bin/claude-powernap
       - name: Install
         shell: pwsh
         run: .\install.ps1
       - name: Verify scheduled task exists
         shell: pwsh
-        run: schtasks /query /tn session-sentinel-watcher /fo LIST
+        run: schtasks /query /tn claude-powernap-watcher /fo LIST
       - name: Fixture transcript
         shell: pwsh
         run: |
@@ -84,23 +84,23 @@ jobs:
       - name: Monitor (local source)
         shell: pwsh
         run: |
-          python "$env:USERPROFILE\.claude\session-sentinel\usage_check.py" --debug --force-local | Tee-Object out.json
+          python "$env:USERPROFILE\.claude\claude-powernap\usage_check.py" --debug --force-local | Tee-Object out.json
           python -c "import json; d=json.load(open('out.json')); assert d['source']=='local', d"
       - name: Hook emission at threshold
         shell: pwsh
         run: |
-          python -c "import json,os; p=os.path.expandvars(r'%USERPROFILE%\.claude\session-sentinel\config.json'); cfg=json.load(open(p)); cfg.update(threshold_pct=0, endpoint_enabled=False, local_budget_weighted_tokens=1000); json.dump(cfg, open(p,'w'))"
-          python -c "import json,os; sp=os.path.expandvars(r'%USERPROFILE%\.claude\session-sentinel\state.json'); st=json.load(open(sp)) if os.path.exists(sp) else {}; st['last_check']=0; json.dump(st, open(sp,'w'))"
-          '{"session_id":"ci-test","hook_event_name":"PostToolUse"}' | python "$env:USERPROFILE\.claude\session-sentinel\usage_check.py" | Tee-Object hook.json
+          python -c "import json,os; p=os.path.expandvars(r'%USERPROFILE%\.claude\claude-powernap\config.json'); cfg=json.load(open(p)); cfg.update(threshold_pct=0, endpoint_enabled=False, local_budget_weighted_tokens=1000); json.dump(cfg, open(p,'w'))"
+          python -c "import json,os; sp=os.path.expandvars(r'%USERPROFILE%\.claude\claude-powernap\state.json'); st=json.load(open(sp)) if os.path.exists(sp) else {}; st['last_check']=0; json.dump(st, open(sp,'w'))"
+          '{"session_id":"ci-test","hook_event_name":"PostToolUse"}' | python "$env:USERPROFILE\.claude\claude-powernap\usage_check.py" | Tee-Object hook.json
           python -c "import json; d=json.load(open('hook.json')); assert 'USAGE LIMIT WARNING' in d['hookSpecificOutput']['additionalContext']"
       - name: Watcher dry-run + CLI
         shell: pwsh
         run: |
-          python "$env:USERPROFILE\.claude\session-sentinel\fallback_watch.py" --dry-run
-          & "$env:USERPROFILE\.local\bin\claude-sentinel.cmd" status
-          & "$env:USERPROFILE\.local\bin\claude-sentinel.cmd" off
-          & "$env:USERPROFILE\.local\bin\claude-sentinel.cmd" on
-          & "$env:USERPROFILE\.local\bin\claude-sentinel.cmd" log
+          python "$env:USERPROFILE\.claude\claude-powernap\fallback_watch.py" --dry-run
+          & "$env:USERPROFILE\.local\bin\claude-powernap.cmd" status
+          & "$env:USERPROFILE\.local\bin\claude-powernap.cmd" off
+          & "$env:USERPROFILE\.local\bin\claude-powernap.cmd" on
+          & "$env:USERPROFILE\.local\bin\claude-powernap.cmd" log
       - name: Liveness check (rename-test on open file)
         shell: pwsh
         run: python scripts\ci_liveness_test.py
@@ -108,5 +108,5 @@ jobs:
         shell: pwsh
         run: |
           .\uninstall.ps1 -Purge
-          python -c "import json,os; s=json.load(open(os.path.expandvars(r'%USERPROFILE%\.claude\settings.json'))); assert 'session-sentinel' not in json.dumps(s)"
-          $r = schtasks /query /tn session-sentinel-watcher 2>&1; if ($LASTEXITCODE -eq 0) { throw "task still exists" } else { exit 0 }
+          python -c "import json,os; s=json.load(open(os.path.expandvars(r'%USERPROFILE%\.claude\settings.json'))); assert 'claude-powernap' not in json.dumps(s)"
+          $r = schtasks /query /tn claude-powernap-watcher 2>&1; if ($LASTEXITCODE -eq 0) { throw "task still exists" } else { exit 0 }

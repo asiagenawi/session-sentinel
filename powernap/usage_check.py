@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timedelta
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
-from sentinel_common import (CHECKPOINT_DIR, fmt_local, load_config, load_state,
+from powernap_common import (CHECKPOINT_DIR, fmt_local, load_config, load_state,
                              log, save_state, get_usage, get_usage_local)
 
 
@@ -28,7 +28,7 @@ def build_warning(pct, resets_iso, session_id, cfg, source):
     ckpt = CHECKPOINT_DIR / f"{session_id or 'unknown-session'}.md"
     approx = " (approximate local estimate)" if source == "local" else ""
     return (
-        f"[session-sentinel] USAGE LIMIT WARNING: you have consumed {pct}% of the "
+        f"[claude-powernap] USAGE LIMIT WARNING: you have consumed {pct}% of the "
         f"5-hour usage window{approx}. The window resets at {fmt_local(resets_iso)}. "
         f"To avoid dying mid-task, follow this pause protocol NOW:\n"
         f"1. Do NOT start new work. Finish or safely stop the current step only.\n"

@@ -1,22 +1,22 @@
-# session-sentinel uninstaller (native Windows). -Purge also deletes state/checkpoints.
+# claude-powernap uninstaller (native Windows). -Purge also deletes state/checkpoints.
 param([switch]$Purge)
 $ErrorActionPreference = "SilentlyContinue"
 
 $RepoDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$SentinelDir = Join-Path $env:USERPROFILE ".claude\session-sentinel"
+$PowernapDir = Join-Path $env:USERPROFILE ".claude\claude-powernap"
 $Settings = Join-Path $env:USERPROFILE ".claude\settings.json"
 
-schtasks /delete /f /tn "session-sentinel-watcher" | Out-Null
-Remove-Item (Join-Path $env:USERPROFILE ".local\bin\claude-sentinel.cmd") -Force
+schtasks /delete /f /tn "claude-powernap-watcher" | Out-Null
+Remove-Item (Join-Path $env:USERPROFILE ".local\bin\claude-powernap.cmd") -Force
 
 $Py = (Get-Command python -ErrorAction SilentlyContinue).Source
 if ($Py) { & $Py (Join-Path $RepoDir "scripts\hooks_config.py") unregister $Settings }
 
 if ($Purge) {
-    Remove-Item $SentinelDir -Recurse -Force
-    Write-Host "purged $SentinelDir"
+    Remove-Item $PowernapDir -Recurse -Force
+    Write-Host "purged $PowernapDir"
 } else {
-    Remove-Item (Join-Path $SentinelDir "*.py") -Force
-    Write-Host "kept config/state/checkpoints in $SentinelDir (use -Purge to delete)"
+    Remove-Item (Join-Path $PowernapDir "*.py") -Force
+    Write-Host "kept config/state/checkpoints in $PowernapDir (use -Purge to delete)"
 }
-Write-Host "session-sentinel uninstalled"
+Write-Host "claude-powernap uninstalled"

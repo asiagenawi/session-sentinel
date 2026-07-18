@@ -1,5 +1,5 @@
 [Unit]
-Description=Run session-sentinel fallback watcher every 2 minutes
+Description=Run claude-powernap fallback watcher every 2 minutes
 
 [Timer]
 OnBootSec=2min

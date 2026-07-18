@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
-"""claude-sentinel — toggle and inspect session-sentinel.
+"""claude-powernap — toggle and inspect claude-powernap.
 
 Commands:
   on       enable monitoring + load the fallback watcher
   off      disable monitoring + unload the fallback watcher
   status   show enabled state, watcher state, and live usage
-  log      tail the sentinel log
+  log      tail the powernap log
 """
 import json
 import subprocess
 import sys
 from pathlib import Path
 
-SENTINEL_DIR = Path.home() / ".claude" / "session-sentinel"
-sys.path.insert(0, str(SENTINEL_DIR))
-from sentinel_common import (CONFIG_PATH, LOG_PATH, fmt_local, load_config,
+POWERNAP_DIR = Path.home() / ".claude" / "claude-powernap"
+sys.path.insert(0, str(POWERNAP_DIR))
+from powernap_common import (CONFIG_PATH, LOG_PATH, fmt_local, load_config,
                              load_state, save_state, get_usage)
 
 IS_MAC = sys.platform == "darwin"
 IS_WIN = __import__("os").name == "nt"
-PLIST = Path.home() / "Library" / "LaunchAgents" / "com.session-sentinel.watcher.plist"
-LABEL = "com.session-sentinel.watcher"
-TIMER = "session-sentinel.timer"
-WIN_TASK = "session-sentinel-watcher"
+PLIST = Path.home() / "Library" / "LaunchAgents" / "com.claude-powernap.watcher.plist"
+LABEL = "com.claude-powernap.watcher"
+TIMER = "claude-powernap.timer"
+WIN_TASK = "claude-powernap-watcher"
 
 
 def set_watcher(value):
@@ -45,7 +45,7 @@ def set_enabled(value):
     with open(CONFIG_PATH, "w") as f:
         json.dump(cfg, f, indent=2)
     set_watcher(value)
-    print(f"session-sentinel {'ON — monitoring all Claude Code sessions' if value else 'OFF'}")
+    print(f"claude-powernap {'ON — monitoring all Claude Code sessions' if value else 'OFF'}")
 
 
 def watcher_loaded():

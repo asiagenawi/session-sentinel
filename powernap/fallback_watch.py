@@ -19,8 +19,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sentinel_common import (CHECKPOINT_DIR, IS_MAC, IS_WIN, PROJECTS_DIR,
-                             SENTINEL_DIR, fmt_local, load_config, load_state,
+from powernap_common import (CHECKPOINT_DIR, IS_MAC, IS_WIN, PROJECTS_DIR,
+                             POWERNAP_DIR, fmt_local, load_config, load_state,
                              log, save_state)
 
 # (binary, flags-before-command) pairs, tried in order on Linux
@@ -148,7 +148,7 @@ def transcript_holders(path):
 
 def resume_prompt(session_id):
     ckpt = CHECKPOINT_DIR / f"{session_id}.md"
-    return (f"You hit the session limit and were auto-resumed by session-sentinel. "
+    return (f"You hit the session limit and were auto-resumed by claude-powernap. "
             f"Read {ckpt} if it exists, otherwise infer state from this session's "
             f"context, and continue the work.")
 
@@ -160,13 +160,13 @@ def open_terminal_resume(cwd, session_id, cfg):
         import shutil
         claude = shutil.which("claude") or "claude"
         # A batch file sidesteps cmd.exe quoting entirely.
-        bat = SENTINEL_DIR / f"resume-{session_id}.cmd"
+        bat = POWERNAP_DIR / f"resume-{session_id}.cmd"
         bat.write_text(f'@echo off\r\ncd /d "{cwd}"\r\n'
                        f'"{claude}" --resume {session_id} "{resume_prompt(session_id)}"\r\n')
         if shutil.which("wt"):
             subprocess.Popen(["wt", "new-tab", "cmd", "/k", str(bat)])
         else:
-            subprocess.Popen(["cmd", "/c", "start", "session-sentinel", "cmd",
+            subprocess.Popen(["cmd", "/c", "start", "claude-powernap", "cmd",
                               "/k", str(bat)])
         return
     if not IS_MAC:
@@ -200,7 +200,7 @@ WIN_TOAST_PS = """
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null
 $x = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
 $t = $x.GetElementsByTagName('text'); $t.Item(0).AppendChild($x.CreateTextNode($env:SS_TITLE)) | Out-Null; $t.Item(1).AppendChild($x.CreateTextNode($env:SS_MSG)) | Out-Null
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('session-sentinel').Show([Windows.UI.Notifications.ToastNotification]::new($x))
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('claude-powernap').Show([Windows.UI.Notifications.ToastNotification]::new($x))
 """
 
 
@@ -226,7 +226,7 @@ def headless_resume(cwd, session_id, cfg):
     claude = shutil.which("claude") or "claude"  # resolves claude.cmd on Windows
     cmd = [claude, "--resume", session_id, "-p", resume_prompt(session_id),
            *cfg.get("headless_resume_extra_args", [])]
-    subprocess.Popen(cmd, cwd=cwd, stdout=open(str(CHECKPOINT_DIR.parent / "sentinel.log"), "a"),
+    subprocess.Popen(cmd, cwd=cwd, stdout=open(str(CHECKPOINT_DIR.parent / "powernap.log"), "a"),
                      stderr=subprocess.STDOUT, start_new_session=True)
 
 
@@ -289,7 +289,7 @@ def main():
         if holders:
             if now - notified.get(session_id, 0) > 1800:
                 notified[session_id] = now
-                notify("session-sentinel",
+                notify("claude-powernap",
                        f"Limit reset. Session {session_id[:8]}… is open and waiting "
                        f"— submit any prompt to continue.")
                 log(f"fallback: session {session_id} alive (pids {holders}), notified user")
@@ -298,7 +298,7 @@ def main():
             try:
                 open_terminal_resume(cwd, session_id, cfg)
                 log(f"fallback: resumed {session_id} in {cfg.get('terminal_app')} window (cwd {cwd})")
-                notify("session-sentinel", f"Auto-resumed session {session_id[:8]}… in a new window.")
+                notify("claude-powernap", f"Auto-resumed session {session_id[:8]}… in a new window.")
             except Exception as e:
                 log(f"fallback: terminal resume failed ({e!r}); going headless")
                 try:

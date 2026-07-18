@@ -1,13 +1,13 @@
-# session-sentinel installer (native Windows). Idempotent — re-run to upgrade.
+# claude-powernap installer (native Windows). Idempotent — re-run to upgrade.
 $ErrorActionPreference = "Stop"
 
 $RepoDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$SentinelDir = Join-Path $env:USERPROFILE ".claude\session-sentinel"
+$PowernapDir = Join-Path $env:USERPROFILE ".claude\claude-powernap"
 $Settings = Join-Path $env:USERPROFILE ".claude\settings.json"
 $BinDir = Join-Path $env:USERPROFILE ".local\bin"
-$TaskName = "session-sentinel-watcher"
+$TaskName = "claude-powernap-watcher"
 
-Write-Host "== session-sentinel install (Windows) =="
+Write-Host "== claude-powernap install (Windows) =="
 
 $Py = (Get-Command python -ErrorAction SilentlyContinue).Source
 if (-not $Py) { Write-Error "python not found on PATH — install Python 3 first"; exit 1 }
@@ -16,20 +16,20 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
 }
 
 # 1. Files
-New-Item -ItemType Directory -Force -Path (Join-Path $SentinelDir "checkpoints") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $PowernapDir "checkpoints") | Out-Null
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-Copy-Item (Join-Path $RepoDir "sentinel\sentinel_common.py") $SentinelDir -Force
-Copy-Item (Join-Path $RepoDir "sentinel\usage_check.py") $SentinelDir -Force
-Copy-Item (Join-Path $RepoDir "sentinel\fallback_watch.py") $SentinelDir -Force
-$Cfg = Join-Path $SentinelDir "config.json"
-if (-not (Test-Path $Cfg)) { Copy-Item (Join-Path $RepoDir "sentinel\config.default.json") $Cfg }
-Copy-Item (Join-Path $RepoDir "bin\claude-sentinel") (Join-Path $SentinelDir "claude_sentinel_cli.py") -Force
-Write-Host "installed files -> $SentinelDir"
+Copy-Item (Join-Path $RepoDir "powernap\powernap_common.py") $PowernapDir -Force
+Copy-Item (Join-Path $RepoDir "powernap\usage_check.py") $PowernapDir -Force
+Copy-Item (Join-Path $RepoDir "powernap\fallback_watch.py") $PowernapDir -Force
+$Cfg = Join-Path $PowernapDir "config.json"
+if (-not (Test-Path $Cfg)) { Copy-Item (Join-Path $RepoDir "powernap\config.default.json") $Cfg }
+Copy-Item (Join-Path $RepoDir "bin\claude-powernap") (Join-Path $PowernapDir "claude_powernap_cli.py") -Force
+Write-Host "installed files -> $PowernapDir"
 
 # 2. CLI shim + user PATH
-$UsageScript = Join-Path $SentinelDir "usage_check.py"
-$CliScript = Join-Path $SentinelDir "claude_sentinel_cli.py"
-"@echo off`r`n""$Py"" ""$CliScript"" %*" | Set-Content (Join-Path $BinDir "claude-sentinel.cmd") -Encoding ascii
+$UsageScript = Join-Path $PowernapDir "usage_check.py"
+$CliScript = Join-Path $PowernapDir "claude_powernap_cli.py"
+"@echo off`r`n""$Py"" ""$CliScript"" %*" | Set-Content (Join-Path $BinDir "claude-powernap.cmd") -Encoding ascii
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($UserPath -notlike "*$BinDir*") {
     [Environment]::SetEnvironmentVariable("Path", "$UserPath;$BinDir", "User")
@@ -42,9 +42,9 @@ if ($UserPath -notlike "*$BinDir*") {
 # 4. Fallback watcher via Task Scheduler (pythonw = no console flash)
 $Pyw = $Py -replace "python\.exe$", "pythonw.exe"
 if (-not (Test-Path $Pyw)) { $Pyw = $Py }
-$Tr = '"{0}" "{1}"' -f $Pyw, (Join-Path $SentinelDir "fallback_watch.py")
+$Tr = '"{0}" "{1}"' -f $Pyw, (Join-Path $PowernapDir "fallback_watch.py")
 schtasks /create /f /tn $TaskName /sc minute /mo 2 /tr $Tr | Out-Null
 Write-Host "fallback watcher scheduled (Task Scheduler: $TaskName, every 2 min)"
 
 Write-Host ""
-Write-Host "Done. Commands:  claude-sentinel status | on | off | log"
+Write-Host "Done. Commands:  claude-powernap status | on | off | log"

@@ -1,68 +1,107 @@
-# session-sentinel
+# claude-powernap
 
-Keep long-running Claude Code automations alive across the subscription's
-5-hour session limit — **proactively**. Instead of dying mid-task at the hard
-limit, your session is warned at ~90% usage, checkpoints its own work,
-schedules its own resumption for the moment the window resets, and continues
-in the **same open terminal session**. A background watcher catches the cases
-where the limit is hit anyway.
+[![CI](https://github.com/asiagenawi/claude-powernap/actions/workflows/ci.yml/badge.svg)](https://github.com/asiagenawi/claude-powernap/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/asiagenawi/claude-powernap)](https://github.com/asiagenawi/claude-powernap/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
+![Deps](https://img.shields.io/badge/deps-stdlib%20only-brightgreen)
 
-Free, local, dependency-free (Python 3 stdlib only). macOS, Linux (incl.
-WSL), and native Windows (experimental).
+**Your Claude Code session sees the usage limit coming, saves its work, and
+resumes itself when the window resets. You do nothing.**
 
-## How it works
+## The problem
 
-1. **Monitor** — a Claude Code hook (`PostToolUse`/`UserPromptSubmit`/`Stop`)
-   checks your 5-hour window at most every 2 minutes. Usage comes from the
-   same endpoint Claude Code's `/usage` screen uses (exact %, exact reset
-   time), with a fully-local transcript-based estimate as fallback.
-2. **Pause protocol** — at the threshold (default 90%) the hook injects a
-   warning into the live session. Claude then: stops starting new work, writes
-   a checkpoint file (`~/.claude/session-sentinel/checkpoints/<session>.md`),
-   creates a one-shot scheduled task for reset time + 3 min, announces the
-   pause, and idles.
-3. **Self-resume** — the scheduled task fires inside the still-open session at
-   reset; Claude reads its checkpoint and continues. No human action needed.
-4. **Fallback watcher** — a launchd job (every 2 min) spots sessions whose
-   transcript ends in a rate-limit error. After the reset it resumes them
-   *visibly*: if the original `claude` process is dead it opens a new
-   Terminal/iTerm2 window with `claude --resume <id>` and the continue-prompt
-   pre-submitted; if the process is still alive it just sends a macOS
-   notification (never injects into or forks a live session); headless resume
-   only as a last resort when no GUI is available.
+You kick off a long Claude Code automation — a big refactor, a batch
+migration, an overnight research run. You check back three hours later and
+find it died 40 minutes in:
+
+```
+You've hit your session limit · resets 3:00am
+```
+
+Everything since the last commit is in limbo. The context that session had
+built up is sitting frozen mid-thought. And the limit reset hours ago — the
+session just had no way to know, no way to save itself, and no way to come
+back. Your subscription's 5-hour window refilled while your automation sat
+dead in a terminal.
+
+Existing tools handle this the blunt way: they watch for the *corpse* — the
+session that already hit the wall — and mash "continue" at it after the
+reset. That works, but the session still died mid-tool-call, with no chance
+to wrap up.
+
+## The idea
+
+A session that's *about* to hit the limit still has tokens left. That's
+enough budget to do something smarter than die:
+
+1. **A hook watches your usage** (checked at most every 2 min, zero workflow
+   changes). It knows your exact window percentage and reset time — the same
+   numbers Claude Code's own `/usage` screen shows.
+2. **At 90%, the session itself gets warned** — the hook injects a message
+   into the live conversation: *"you're at 91%, window resets at 3:00am,
+   pause now."*
+3. **Claude wraps up gracefully**: finishes the current step, writes a
+   checkpoint file (what's done, what's in flight, exact next steps), and
+   schedules a one-shot task for just after the reset. Then it idles.
+4. **At reset, the session wakes itself** — same terminal, same context,
+   reads its checkpoint, keeps going.
+
+If the estimate is ever wrong and a session hard-hits the wall anyway, a
+background watcher catches that too: after the reset it reopens the session
+in a visible terminal window with the "continue from your checkpoint" prompt
+already submitted. If the original window is still open, you get a
+notification instead — it will never fork a live session.
+
+## How it compares
+
+| | warns before the limit | session saves its work | resumes automatically | needs tmux |
+|---|---|---|---|---|
+| **claude-powernap** | ✅ | ✅ | ✅ same session | no |
+| usage monitors (ccusage, claude-monitor) | ⚠️ warns *you*, not the session | ❌ | ❌ | — |
+| auto-retriers (unsnooze, claude-auto-retry, …) | ❌ reacts after death | ❌ dies mid-thought | ✅ | mostly yes |
+
+Free, local, no dependencies (Python 3 stdlib only). macOS, Linux (incl.
+WSL), native Windows (experimental).
 
 ## Install
 
 ```bash
-git clone https://github.com/asiagenawi/session-sentinel.git && cd session-sentinel
+git clone https://github.com/asiagenawi/claude-powernap.git && cd claude-powernap
 ./install.sh        # macOS / Linux / WSL
 ```
 
 Native Windows (PowerShell 7 recommended):
 
 ```powershell
-git clone https://github.com/asiagenawi/session-sentinel.git; cd session-sentinel
+git clone https://github.com/asiagenawi/claude-powernap.git; cd claude-powernap
 .\install.ps1
 ```
 
-Idempotent; re-run to upgrade. It copies scripts to
-`~/.claude/session-sentinel/`, merges three hook entries into
-`~/.claude/settings.json` (backup saved first), loads the launchd watcher, and
-puts the `claude-sentinel` CLI in `~/.local/bin`.
+That's the whole setup. Every Claude Code session on the machine is covered —
+no per-project config, no special launcher, no flags to remember. Start your
+long automations exactly the way you already do.
 
-The first usage check may trigger a macOS Keychain prompt (the monitor reads
-Claude Code's own OAuth token to query usage) — click "Always Allow".
+The installer is deliberately boring and inspectable: it copies a few Python
+files to `~/.claude/claude-powernap/`, merges three hook entries into
+`~/.claude/settings.json` (backing it up first), and schedules the fallback
+watcher (launchd / systemd user timer / Task Scheduler). `uninstall.sh`
+reverses all of it.
+
+On macOS the first usage check may trigger one Keychain prompt — the monitor
+reads Claude Code's own OAuth token to ask Anthropic for your real usage
+numbers (see Caveats). Click "Always Allow".
 
 ## Toggle
 
 ```bash
-claude-sentinel on       # enable everything
-claude-sentinel off      # disable everything (hooks stay registered but exit instantly)
-claude-sentinel status   # enabled? watcher? current 5h + weekly usage
-claude-sentinel log      # recent sentinel activity
+claude-powernap on       # enable everything
+claude-powernap off      # disable everything
+claude-powernap status   # current 5h + weekly usage, watcher state
+claude-powernap log      # what the watcher and monitor have been doing
 ```
 
-## Configure — `~/.claude/session-sentinel/config.json`
+## Configure — `~/.claude/claude-powernap/config.json`
 
 | key | default | meaning |
 |---|---|---|
@@ -75,32 +114,35 @@ claude-sentinel log      # recent sentinel activity
 | `headless_resume_extra_args` | `[]` | extra flags for last-resort headless resume |
 | `local_budget_weighted_tokens` | `null` | manual budget for local estimation |
 
-## Caveats
+## Caveats (read these — they're the honest part)
 
-- **Undocumented endpoint**: the exact-usage source is the endpoint Claude
-  Code's own `/usage` uses; it isn't a published API and could change or be
-  restricted at any time. The tool degrades to local estimation automatically.
-  Set `endpoint_enabled: false` if you'd rather never call it.
-- **Local estimate is approximate**: token-weighted guess, self-calibrated
-  from past limit hits; keep the threshold conservative when relying on it.
-- The paused session must stay open (that's the point); the scheduled-task
-  resume relies on Claude Code's native scheduled-tasks feature.
+- **Usage numbers come from an undocumented endpoint** — the same one Claude
+  Code's own `/usage` screen calls, authenticated with the OAuth token Claude
+  Code already stores on your machine. Nothing leaves your machine except
+  that one HTTPS request to Anthropic. It isn't a published API and could
+  change or be restricted at any time; the tool automatically degrades to
+  local estimation if it fails. Worth naming plainly: Anthropic's consumer
+  terms scope OAuth tokens to Claude Code itself, so a script making this
+  query — even the identical read-only call `/usage` makes, the same pattern
+  ccusage-class tools use — sits in a ToS gray area. Set
+  `endpoint_enabled: false` if you'd rather avoid it entirely — everything
+  still works, just with an approximate percentage (self-calibrated,
+  conservative threshold recommended).
+- The paused session must stay open — that's the point. The self-resume uses
+  Claude Code's native scheduled-tasks feature.
 - **Platforms**: macOS uses Keychain + launchd + osascript. Linux uses
-  `~/.claude/.credentials.json` + a systemd user timer + `notify-send` and
-  auto-detects your terminal emulator (gnome-terminal, konsole, kitty,
-  alacritty, xterm, …; set `terminal_app` to a binary name to override).
-  Headless Linux servers work too — the watcher just falls straight to
-  headless resume. Run `loginctl enable-linger $USER` if you want the watcher
-  active while logged out.
-- **Windows (experimental)**: token from `~/.claude/.credentials.json`, watcher
-  via Task Scheduler (every 2 min, `pythonw` so no console flash), toast
-  notifications, resume in Windows Terminal (`wt`) or a new cmd window.
-  Liveness detection is deliberately conservative (rename-test + claude.exe
-  check): when in doubt it notifies instead of auto-resuming, so it never
-  forks a live session — worst case you click instead of it being automatic.
-  Exercised by CI on real Windows runners; interactive behavior (window spawn,
-  toasts) is less battle-tested than macOS/Linux — issues welcome. WSL users:
-  just use `./install.sh` inside WSL instead.
+  `~/.claude/.credentials.json` + a systemd user timer + `notify-send`, and
+  auto-detects your terminal emulator. Headless Linux servers work — the
+  watcher falls through to headless resume. Run `loginctl enable-linger
+  $USER` to keep the watcher active while logged out.
+- **Windows (experimental)**: token from `~/.claude/.credentials.json`,
+  watcher via Task Scheduler (`pythonw`, no console flash), toast
+  notifications, resume in Windows Terminal or a new cmd window. Liveness
+  detection is deliberately conservative (rename-test + claude.exe check):
+  when in doubt it notifies you instead of auto-resuming, so it never forks
+  a live session — worst case is one click instead of full automation.
+  Exercised by CI on real Windows runners; interactive behavior is less
+  battle-tested than macOS/Linux. WSL users: use `./install.sh` inside WSL.
 
 ## Uninstall
 
@@ -110,3 +152,7 @@ claude-sentinel log      # recent sentinel activity
 ```
 
 Windows: `.\uninstall.ps1` (or `.\uninstall.ps1 -Purge`).
+
+## License
+
+MIT

@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path.home() / ".claude" / "session-sentinel"))
+sys.path.insert(0, str(Path.home() / ".claude" / "claude-powernap"))
 from fallback_watch import transcript_holders
 
 path = Path.home() / ".claude" / "projects" / "-test" / "ci-test.jsonl"

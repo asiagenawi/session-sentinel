@@ -1,4 +1,4 @@
-"""Shared logic for session-sentinel: config, state, usage sources, block math."""
+"""Shared logic for claude-powernap: config, state, usage sources, block math."""
 import json
 import os
 import re
@@ -10,13 +10,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HOME = Path.home()
-SENTINEL_DIR = Path(os.environ.get("SENTINEL_HOME", HOME / ".claude" / "session-sentinel"))
+POWERNAP_DIR = Path(os.environ.get("POWERNAP_HOME", HOME / ".claude" / "claude-powernap"))
 CLAUDE_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR", HOME / ".claude"))
 PROJECTS_DIR = CLAUDE_DIR / "projects"
-CONFIG_PATH = SENTINEL_DIR / "config.json"
-STATE_PATH = SENTINEL_DIR / "state.json"
-CHECKPOINT_DIR = SENTINEL_DIR / "checkpoints"
-LOG_PATH = SENTINEL_DIR / "sentinel.log"
+CONFIG_PATH = POWERNAP_DIR / "config.json"
+STATE_PATH = POWERNAP_DIR / "state.json"
+CHECKPOINT_DIR = POWERNAP_DIR / "checkpoints"
+LOG_PATH = POWERNAP_DIR / "powernap.log"
 
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 KEYCHAIN_SERVICE_PREFIX = "Claude Code-credentials"
@@ -38,7 +38,7 @@ DEFAULT_CONFIG = {
 
 
 def log(msg):
-    SENTINEL_DIR.mkdir(parents=True, exist_ok=True)
+    POWERNAP_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().astimezone().isoformat(timespec="seconds")
     with open(LOG_PATH, "a") as f:
         f.write(f"{ts} {msg}\n")
@@ -63,7 +63,7 @@ def load_state():
 
 
 def save_state(state):
-    SENTINEL_DIR.mkdir(parents=True, exist_ok=True)
+    POWERNAP_DIR.mkdir(parents=True, exist_ok=True)
     tmp = STATE_PATH.with_suffix(".tmp")
     with open(tmp, "w") as f:
         json.dump(state, f, indent=1)
