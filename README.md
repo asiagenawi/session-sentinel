@@ -2,14 +2,16 @@
 
 [![CI](https://github.com/asiagenawi/claude-powernap/actions/workflows/ci.yml/badge.svg)](https://github.com/asiagenawi/claude-powernap/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/asiagenawi/claude-powernap)](https://github.com/asiagenawi/claude-powernap/releases)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/asiagenawi/claude-powernap/blob/main/LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 ![Deps](https://img.shields.io/badge/deps-stdlib%20only-brightgreen)
 
 **Your Claude Code session sees the usage limit coming, saves its work, and
 resumes itself when the window resets. You do nothing.**
 
-![claude-powernap demo: a session gets warned at 91%, checkpoints, pauses, and self-resumes after the window resets](demo/powernap.gif)
+*(Demo below is an illustrative mock-up of a real cycle the tool ran.)*
+
+![claude-powernap demo: a session gets warned at 91%, checkpoints, pauses, and self-resumes after the window resets](https://raw.githubusercontent.com/asiagenawi/claude-powernap/main/demo/powernap.gif)
 
 ## The problem
 
@@ -32,17 +34,21 @@ dead in a terminal.
 A session that's *about* to hit the limit still has tokens left. That's
 enough budget to do something smarter than die:
 
-1. **A hook watches your usage** (checked at most every 2 min, zero workflow
-   changes). It knows your exact window percentage and reset time — the same
+1. **A hook watches your usage** (every ~2 min normally, tightening to ~15s
+   near the limit; zero workflow changes). It knows your exact window percentage and reset time — the same
    numbers Claude Code's own `/usage` screen shows.
-2. **At 90%, the session itself gets warned** — the hook injects a message
+2. **At 90% — or earlier if your burn rate projects the limit within ~9
+   minutes — the session itself gets warned**: the hook injects a message
    into the live conversation: *"you're at 91%, window resets at 3:00am,
    pause now."*
 3. **Claude wraps up gracefully**: finishes the current step, writes a
-   checkpoint file (what's done, what's in flight, exact next steps), and
-   schedules a one-shot task for just after the reset. Then it idles.
+   checkpoint file (what's done, what's in flight, exact next steps), and —
+   when the session has a scheduled-tasks capability — schedules a one-shot
+   task for just after the reset. Then it idles.
 4. **At reset, the session wakes itself** — same terminal, same context,
-   reads its checkpoint, keeps going.
+   reads its checkpoint, keeps going. Sessions without a scheduler instead
+   checkpoint and tell you when to send any message to resume — and the
+   watcher (below) still notifies or reopens as needed.
 
 If the estimate is ever wrong and a session hard-hits the wall anyway, a
 background watcher catches that too: after the reset it reopens the session
@@ -135,6 +141,7 @@ claude-powernap log      # what the watcher and monitor have been doing
 | `resume_grace_min` | `3` | schedule resume this long after reset |
 | `headless_resume_extra_args` | `[]` | extra flags for last-resort headless resume |
 | `local_budget_weighted_tokens` | `null` | manual budget for local estimation |
+| `token_weights` | in/out/cache | per-token-type weights for local estimation |
 
 ## Plays by the rules
 
@@ -167,18 +174,23 @@ claude-powernap works *with* the usage limit, not around it:
   notifies you instead of auto-resuming (one click, never a forked session).
   CI runs the full cycle on real Windows runners. WSL users: use
   `./install.sh` inside WSL.
+- **Sleep beats timers** — a sleeping laptop fires nothing: the in-session
+  alarm and the watcher both wait until the machine wakes, then the watcher
+  catches up (rescuing any missed wake-ups). For unattended overnight runs
+  keep the machine awake, e.g. `caffeinate -is` on macOS.
 - **Linux notes**: terminal emulator auto-detected; headless servers fall
   through to headless resume; `loginctl enable-linger $USER` keeps the
   watcher running while logged out.
 
 ## Uninstall
 
-```bash
-./uninstall.sh          # removes hooks, watcher, CLI; keeps config/checkpoints
-./uninstall.sh --purge  # removes everything
-```
+By install method:
 
-Windows: `.\uninstall.ps1` (or `.\uninstall.ps1 -Purge`).
+| installed via | uninstall with |
+|---|---|
+| plugin | run `python3 ~/.claude/claude-powernap/cli.py watcher-remove` (if you set up the watcher), then `/plugin uninstall powernap` |
+| PyPI | `claude-powernap remove` (add `--purge` to delete config/state too), **then** `pip uninstall claude-powernap` — in that order |
+| clone | `./uninstall.sh` (or `--purge`); Windows: `.\uninstall.ps1` (or `-Purge`) |
 
 ## License
 

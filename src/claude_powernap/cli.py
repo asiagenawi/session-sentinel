@@ -41,6 +41,28 @@ DEPLOY_FILES = ["powernap_common.py", "usage_check.py", "fallback_watch.py",
                 "hooks_config.py", "cli.py"]
 
 
+def _stable_python():
+    """Interpreter path safe to embed in hooks/shims/scheduled jobs.
+
+    Under `uvx`, sys.executable lives in uv's cache and can be garbage-
+    collected later — silently killing every hook. Prefer a system python
+    whenever the current interpreter looks ephemeral.
+    """
+    exe = sys.executable
+    markers = ("/uv/", "\\uv\\", "uv/archive", "Caches/uv", ".cache/uv",
+               "/tmp/", "\\Temp\\", "pip-build-env")
+    if not any(m in exe for m in markers):
+        return exe
+    for cand in ("python3", "python"):
+        found = shutil.which(cand)
+        if found and not any(m in found for m in markers):
+            return found
+    print(f"WARNING: only found an ephemeral interpreter ({exe}); hooks may "
+          f"break if its environment is cleaned up. Install with pipx or pip "
+          f"for a stable interpreter.")
+    return exe
+
+
 # ─────────────────────────────────────────────────────────── setup / remove
 
 def _schedule_watcher():
@@ -54,7 +76,7 @@ def _schedule_watcher():
                        capture_output=True)
         return f"launchd: {LABEL}"
     if IS_WIN:
-        py = sys.executable
+        py = _stable_python()
         pyw = py.replace("python.exe", "pythonw.exe")
         if not Path(pyw).exists():
             pyw = py
@@ -99,12 +121,13 @@ def _write_cli_shim():
     """PATH entry for clone/uvx users; pip installs also get the entry point."""
     BIN_DIR.mkdir(parents=True, exist_ok=True)
     target = POWERNAP_DIR / "cli.py"
+    py = _stable_python()
     if IS_WIN:
         shim = BIN_DIR / "claude-powernap.cmd"
-        shim.write_text(f'@echo off\r\n"{sys.executable}" "{target}" %*\r\n')
+        shim.write_text(f'@echo off\r\n"{py}" "{target}" %*\r\n')
     else:
         shim = BIN_DIR / "claude-powernap"
-        shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{target}" "$@"\n')
+        shim.write_text(f'#!/bin/sh\nexec "{py}" "{target}" "$@"\n')
         shim.chmod(0o755)
     return shim
 
@@ -122,7 +145,7 @@ def setup():
         shutil.copy(ASSETS / "config.default.json", CONFIG_PATH)
     print(f"files -> {POWERNAP_DIR}")
     # 2. Hooks (merged into settings.json, backup written first).
-    hook_cmd = f'"{sys.executable}" "{POWERNAP_DIR / "usage_check.py"}"'
+    hook_cmd = f'"{_stable_python()}" "{POWERNAP_DIR / "usage_check.py"}"'
     hooks_config.register(str(CLAUDE_DIR / "settings.json"), hook_cmd)
     # 3. Watcher.
     print(f"watcher: {_schedule_watcher()}")
@@ -216,9 +239,10 @@ def main():
         # Deploy the files the scheduled job runs — plugin installs never ran
         # setup(), and the job must not depend on the plugin dir's lifetime.
         POWERNAP_DIR.mkdir(parents=True, exist_ok=True)
-        for name in ("powernap_common.py", "fallback_watch.py"):
+        for name in DEPLOY_FILES:  # full set: watcher-remove must survive /plugin uninstall
             shutil.copy(PKG_DIR / name, POWERNAP_DIR / name)
         print(f"watcher: {_schedule_watcher()}")
+        print(f"undo anytime: python3 {POWERNAP_DIR / 'cli.py'} watcher-remove")
     elif cmd == "watcher-remove":
         _unschedule_watcher()
         print("watcher unscheduled")

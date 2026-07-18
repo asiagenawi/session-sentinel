@@ -1,11 +1,15 @@
 {
   "name": "claude-powernap",
-  "owner": { "name": "asiagenawi", "url": "https://github.com/asiagenawi" },
+  "owner": {
+    "name": "asiagenawi",
+    "url": "https://github.com/asiagenawi"
+  },
   "plugins": [
     {
       "name": "powernap",
       "source": "./",
-      "description": "Warns your session near the 5-hour usage limit so it checkpoints, pauses, and resumes itself when the window resets. Zero extra usage — it works with the limit, not around it."
+      "description": "Warns your session near the 5-hour usage limit so it checkpoints, pauses, and resumes itself when the window resets. Zero extra usage \u2014 it works with the limit, not around it."
     }
-  ]
+  ],
+  "description": "Marketplace for claude-powernap: proactive 5-hour-limit pause-and-resume for Claude Code sessions."
 }

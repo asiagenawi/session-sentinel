@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Generate demo/powernap.cast (asciinema v2) for the README GIF.
 
-Styled after the Claude Code TUI. The powernap lines are the tool's REAL
-outputs — warning text verbatim from usage_check.build_warning(), timestamps
-in fmt_local()'s format, the resume arriving as the scheduled user-turn
-prompt the hook actually dictates. Render with:
+Styled after the Claude Code TUI. An illustrative mock-up of a real cycle:
+powernap lines are condensed from usage_check.build_warning()'s actual
+output (timestamps in fmt_local()'s format; resume shown as the scheduled
+user-turn prompt the hook dictates), and the '⧉ context injected' banner
+visualizes an injection the real TUI does not render. Render with:
   agg --font-size 15 --theme monokai --last-frame-duration 4 demo/powernap.cast demo/powernap.gif
 """
 import json

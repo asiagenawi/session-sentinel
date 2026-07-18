@@ -58,7 +58,11 @@ def load_json(path, default):
 
 def load_config():
     cfg = dict(DEFAULT_CONFIG)
-    cfg.update(load_json(CONFIG_PATH, {}))
+    user = load_json(CONFIG_PATH, {})
+    # Deep-merge token_weights so a partial override can't KeyError the scan.
+    weights = {**DEFAULT_CONFIG["token_weights"], **(user.get("token_weights") or {})}
+    cfg.update(user)
+    cfg["token_weights"] = weights
     return cfg
 
 
@@ -131,8 +135,28 @@ def _keychain_services():
     return sorted(names) or [KEYCHAIN_SERVICE_PREFIX]
 
 
+def _read_service_token(svc):
+    """(expiresAt_ms, token) for one Keychain service, or None."""
+    try:
+        raw = subprocess.run(
+            ["security", "find-generic-password", "-s", svc, "-w"],
+            capture_output=True, text=True, timeout=10).stdout.strip()
+        oauth = json.loads(raw).get("claudeAiOauth", {})
+        tok, exp = oauth.get("accessToken"), oauth.get("expiresAt", 0)
+        if tok and exp > time.time() * 1000 + 60_000:
+            return exp, tok
+    except Exception:
+        pass
+    return None
+
+
 def get_oauth_token(state):
-    """Freshest unexpired OAuth access token (Keychain on macOS, file elsewhere)."""
+    """Freshest unexpired OAuth access token (Keychain on macOS, file elsewhere).
+
+    Fast path: a single find-generic-password on the cached service name.
+    The whole-keychain enumeration (dump-keychain) runs ONLY when that cache
+    misses — never on the steady-state path.
+    """
     if not IS_MAC:
         try:
             with open(CREDENTIALS_FILE) as f:
@@ -141,24 +165,18 @@ def get_oauth_token(state):
             return tok if tok and exp > time.time() * 1000 + 60_000 else None
         except (OSError, json.JSONDecodeError):
             return None
-    candidates = []
     cached = state.get("keychain_service")
-    services = _keychain_services()
-    if cached in services:
-        services.remove(cached)
-        services.insert(0, cached)
-    now_ms = time.time() * 1000
-    for svc in services:
-        try:
-            raw = subprocess.run(
-                ["security", "find-generic-password", "-s", svc, "-w"],
-                capture_output=True, text=True, timeout=10).stdout.strip()
-            oauth = json.loads(raw).get("claudeAiOauth", {})
-            tok, exp = oauth.get("accessToken"), oauth.get("expiresAt", 0)
-            if tok and exp > now_ms + 60_000:
-                candidates.append((exp, svc, tok))
-        except Exception:
+    if cached:
+        hit = _read_service_token(cached)
+        if hit:
+            return hit[1]
+    candidates = []
+    for svc in _keychain_services():
+        if svc == cached:
             continue
+        hit = _read_service_token(svc)
+        if hit:
+            candidates.append((hit[0], svc, hit[1]))
     if not candidates:
         return None
     exp, svc, tok = max(candidates)
@@ -181,7 +199,8 @@ def get_usage_from_endpoint(state):
         "Authorization": f"Bearer {token}",
         "anthropic-beta": "oauth-2025-04-20",
         "Content-Type": "application/json",
-        "User-Agent": "claude-cli/2.1.214 (external, cli)",
+        # Honest self-identification (verified accepted by the endpoint).
+        "User-Agent": "claude-powernap/0.3.0 (github.com/asiagenawi/claude-powernap)",
     })
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -211,10 +230,16 @@ def get_usage_from_endpoint(state):
 # ---------------------------------------------------------------- local estimate
 
 def _iter_transcript_events(max_age_h):
-    """Yield (ts_epoch, weighted_tokens_or_0, is_rate_limit) from recent transcripts."""
+    """Yield (ts_epoch, weighted_tokens_or_0, is_rate_limit) from recent transcripts.
+
+    Dedupes by requestId/message.id across files: `claude --resume` copies the
+    history into a NEW transcript, so without this a resumed session's usage
+    counts twice — poisoning both the estimate and the calibration.
+    """
     cfg = load_config()
     w = cfg["token_weights"]
     cutoff = time.time() - max_age_h * 3600
+    seen_ids = set()
     if not PROJECTS_DIR.is_dir():
         return
     for jsonl in PROJECTS_DIR.glob("*/*.jsonl"):
@@ -238,6 +263,11 @@ def _iter_transcript_events(max_age_h):
                         continue
                     if ep < cutoff:
                         continue
+                    rid = rec.get("requestId") or (rec.get("message") or {}).get("id")
+                    if rid:
+                        if rid in seen_ids:
+                            continue
+                        seen_ids.add(rid)
                     u = (rec.get("message") or {}).get("usage") or {}
                     weighted = (u.get("input_tokens", 0) * w["input"]
                                 + u.get("output_tokens", 0) * w["output"]
@@ -272,12 +302,16 @@ def get_usage_local(state):
 
     # Budget preference: explicit config > endpoint-calibrated > limit-hit heuristic.
     budget = cfg.get("local_budget_weighted_tokens") or state.get("calibrated_budget")
-    if not budget:
+    if not budget and now - state.get("no_hits_scan_ts", 0) > 3600:
         # A block that ended in a rate-limit hit reached ~100% of the budget.
+        # The 14-day scan is expensive; when it finds nothing, retry hourly
+        # at most instead of on every check.
         cal_events = sorted(_iter_transcript_events(max_age_h=14 * 24))
         hits = [b["tokens"] for b in _blocks(cal_events) if b["hit_limit"]]
         if hits:
             budget = state["calibrated_budget"] = max(hits)
+        else:
+            state["no_hits_scan_ts"] = now
 
     if current is None:
         return {"source": "local", "pct": 0.0, "resets_at": None,
@@ -309,7 +343,8 @@ def watcher_scheduled():
         return True  # can't tell -> don't nag
 
 
-ACCOUNT_KEYS = ("keychain_service", "calibrated_budget", "calibration_ts")
+ACCOUNT_KEYS = ("keychain_service", "calibrated_budget", "calibration_ts",
+                "samples", "last_pct")
 
 
 def check_account_switch(state):
@@ -334,12 +369,16 @@ def check_account_switch(state):
 
 
 def effective_interval(cfg, pct):
-    """Adaptive check cadence: the closer to the limit, the shorter the throttle."""
+    """Adaptive check cadence: the closer to the limit, the shorter the throttle.
+
+    Never zero — each check costs a token lookup and an HTTPS request, so a
+    floor keeps a busy near-limit session from paying that on every tool use.
+    """
     base = cfg["check_interval_s"]
     if pct is None:
         return base
     if pct >= 90:
-        return 0            # check on every hook fire
+        return min(base, 15)
     if pct >= 80:
         return min(base, 30)
     return base
@@ -389,14 +428,22 @@ def get_usage(state, cfg=None):
     if usage is None:
         return get_usage_local(state)
     # Continuously calibrate the local fallback budget against endpoint truth
-    # (at most every 6h, and only when the window is meaningfully used).
+    # (at most every 6h, only when the window is meaningfully used, and only
+    # when THIS machine's block is substantial — on multi-machine accounts the
+    # endpoint pct includes remote usage this machine's transcripts can't see,
+    # which would otherwise collapse the budget toward zero).
     if usage.get("pct", 0) >= 20 and time.time() - state.get("calibration_ts", 0) > 6 * 3600:
         events = sorted(_iter_transcript_events(max_age_h=26))
         blocks = _blocks(events)
-        if blocks and time.time() < blocks[-1]["start"] + 5 * 3600 and blocks[-1]["tokens"]:
-            state["calibrated_budget"] = blocks[-1]["tokens"] / (usage["pct"] / 100)
+        if (blocks and time.time() < blocks[-1]["start"] + 5 * 3600
+                and blocks[-1]["tokens"] >= 500_000):
+            new_budget = blocks[-1]["tokens"] / (usage["pct"] / 100)
+            prev = state.get("calibrated_budget")
+            if prev:  # smooth: a single skewed reading can't swing the budget
+                new_budget = 0.5 * prev + 0.5 * new_budget
+            state["calibrated_budget"] = new_budget
             state["calibration_ts"] = time.time()
-            log(f"calibrated local budget={int(state['calibrated_budget'])} from endpoint pct={usage['pct']}")
+            log(f"calibrated local budget={int(new_budget)} from endpoint pct={usage['pct']}")
     return usage
 
 

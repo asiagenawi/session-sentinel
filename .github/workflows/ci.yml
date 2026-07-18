@@ -128,6 +128,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build sdist + wheel
         run: pipx run build
+      - name: Assert assets shipped in wheel
+        run: |
+          unzip -l dist/*.whl | grep -q "assets/config.default.json"
+          unzip -l dist/*.whl | grep -q "assets/com.claude-powernap.watcher.plist.template"
+          unzip -l dist/*.whl | grep -q "assets/claude-powernap.timer"
+      - name: Plugin-style hook invocation
+        run: |
+          export CLAUDE_PLUGIN_ROOT="$PWD"
+          echo '{"session_id":"plugin-ci","hook_event_name":"PostToolUse"}' \
+            | sh -c "python3 \"${CLAUDE_PLUGIN_ROOT}/src/claude_powernap/usage_check.py\" || python \"${CLAUDE_PLUGIN_ROOT}/src/claude_powernap/usage_check.py\""
       - name: Install wheel and smoke-test entry point
         run: |
           python3 -m venv /tmp/venv

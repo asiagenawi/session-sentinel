@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -32,3 +32,6 @@ claude-powernap = "claude_powernap.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/claude_powernap"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["demo", ".github", "scripts", ".claude-plugin", "hooks", "commands"]

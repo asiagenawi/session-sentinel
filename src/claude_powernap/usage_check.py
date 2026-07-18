@@ -69,6 +69,16 @@ def build_weekly_warning(pct, resets_iso, session_id, cfg):
     )
 
 
+def _reset_bucket(resets_iso):
+    """Reset time coarsened to the hour, for stable dedup keys across drift."""
+    try:
+        ep = datetime.fromisoformat(
+            (resets_iso or "").replace("Z", "+00:00")).timestamp()
+        return str(int(ep // 3600))
+    except ValueError:
+        return resets_iso or "unknown"
+
+
 NUDGE_RETRY_S = 14 * 86400  # if declined/forgotten, mention again in two weeks
 
 
@@ -115,6 +125,11 @@ def main():
         except json.JSONDecodeError:
             hook_input = {}
     session_id = hook_input.get("session_id", "")
+    if not session_id:
+        # Fall back to the transcript filename so multi-session dedup,
+        # checkpoints, and the pause ledger still work per-session.
+        tp = hook_input.get("transcript_path", "")
+        session_id = Path(tp).stem if tp else ""
     event = hook_input.get("hook_event_name", "PostToolUse")
 
     # One checker at a time: state.json is shared across sessions, so if
@@ -122,10 +137,13 @@ def main():
     with state_lock() as acquired:
         if not acquired and not debug:
             return
-        run_check(cfg, session_id, event, debug, force_local)
+        # Debug may run without the lock, but must then never write state —
+        # an unlocked save can drop concurrent sessions' ledger updates.
+        run_check(cfg, session_id, event, debug, force_local, save_ok=acquired)
 
 
-def run_check(cfg, session_id, event, debug, force_local):
+def run_check(cfg, session_id, event, debug, force_local, save_ok=True):
+    persist = save_state if save_ok else (lambda _s: None)
     state = load_state()
     now = time.time()
     throttle = effective_interval(cfg, state.get("last_pct"))
@@ -134,6 +152,8 @@ def run_check(cfg, session_id, event, debug, force_local):
     state["last_check"] = now
 
     usage = get_usage_local(state) if force_local else get_usage(state, cfg)
+    if usage["source"] != state.get("last_source"):
+        state["samples"] = []  # endpoint and local pct are different scales
     if usage.get("pct") is not None:
         record_sample(state, usage["pct"], now)
     projected = projected_minutes_to_limit(state, now)
@@ -144,7 +164,15 @@ def run_check(cfg, session_id, event, debug, force_local):
 
     if debug:
         print(json.dumps({**usage, "projected_min_to_limit": projected}, indent=2))
-        save_state(state)
+        persist(state)
+        return
+
+    # Stop fires after the turn ends: additionalContext emitted here reaches
+    # no model turn, so emitting AND recording the warned-marker would silently
+    # eat the warning for the whole window. Keep the state/sample updates, but
+    # defer all messaging to the next PostToolUse/UserPromptSubmit.
+    if event == "Stop":
+        persist(state)
         return
 
     warned = state.setdefault("warned", {})
@@ -154,7 +182,7 @@ def run_check(cfg, session_id, event, debug, force_local):
     wpct, wresets = usage.get("weekly_pct"), usage.get("weekly_resets_at")
     if (cfg.get("weekly_guard") and wpct is not None
             and wpct >= cfg.get("weekly_threshold_pct", 90)):
-        weekly_key = f"{session_id}:weekly:{wresets}"
+        weekly_key = f"{session_id}:weekly:{_reset_bucket(wresets)}"
         if weekly_key not in warned:
             warned[weekly_key] = now
             log(f"WEEKLY-WARN session={session_id} weekly_pct={wpct} resets={wresets}")
@@ -163,8 +191,15 @@ def run_check(cfg, session_id, event, debug, force_local):
                 "additionalContext": build_weekly_warning(wpct, wresets,
                                                           session_id, cfg),
             }}))
-            save_state(state)
+            persist(state)
             return  # weekly wall supersedes the 5h protocol
+
+    # While a weekly stop is in force for this session, the 5h protocol's
+    # "schedule a resume" instruction would contradict it — stay quiet.
+    if any(k.startswith(f"{session_id}:weekly:") and now - v < 7 * 86400
+           for k, v in warned.items()):
+        persist(state)
+        return
 
     pct, resets = usage.get("pct"), usage.get("resets_at")
     # Fire on the static threshold OR when the burn rate projects the limit
@@ -172,8 +207,10 @@ def run_check(cfg, session_id, event, debug, force_local):
     over_threshold = pct is not None and pct >= cfg["threshold_pct"]
     burn_trigger = (projected is not None and pct is not None and pct >= 50
                     and projected <= cfg["safety_margin_min"])
-    # One warning per session per window (keyed by reset time).
-    warn_key = f"{session_id}:{resets}"
+    # One warning per session per window. Keyed by the reset HOUR, not the
+    # raw string — endpoint/local resets_at drift would otherwise mint a new
+    # key mid-window and re-warn.
+    warn_key = f"{session_id}:{_reset_bucket(resets)}"
     if (over_threshold or burn_trigger) and warn_key not in warned:
         warned[warn_key] = now
         # Drop stale warn entries (> 24h).
@@ -199,12 +236,15 @@ def run_check(cfg, session_id, event, debug, force_local):
         if nudge:
             log("nudge: watcher not scheduled; asked session to offer setup")
             print(json.dumps(nudge))
-    save_state(state)
+    persist(state)
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # never break the user's session over a monitor bug
-        log(f"usage_check error: {e!r}")
-        sys.exit(0)
+        try:
+            log(f"usage_check error: {e!r}")
+        except Exception:
+            pass  # even logging must not turn into a nonzero exit
+    sys.exit(0)

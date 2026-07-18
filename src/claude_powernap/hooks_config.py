@@ -29,9 +29,13 @@ def register(path, cmd):
 
     def ensure(event, matcher):
         entries = hooks.setdefault(event, [])
-        if any("claude-powernap" in h.get("command", "")
-               for e in entries for h in e.get("hooks", [])):
-            return
+        for e in entries:
+            for h in e.get("hooks", []):
+                if "claude-powernap" in h.get("command", ""):
+                    # Repair, don't skip: a re-run of setup must be able to
+                    # replace a stale interpreter path in an existing hook.
+                    h["command"] = cmd
+                    return
         entry = {"hooks": [{"type": "command", "command": cmd}]}
         if matcher is not None:
             entry["matcher"] = matcher

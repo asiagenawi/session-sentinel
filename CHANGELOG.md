@@ -24,6 +24,40 @@ versioning: [SemVer](https://semver.org/).
 - Repo restructured to a src-layout Python package (`src/claude_powernap/`);
   install logic consolidated into one cross-platform code path.
 
+### Fixed (pre-release audit)
+- Rescue paths now share one ledger — a warned session that then hard-hit
+  the limit can no longer be resumed twice (forked).
+- macOS liveness check fails toward "alive" on lsof errors, matching Windows.
+- Warnings are no longer emitted (and marked delivered) on Stop events,
+  where injected context reaches no model turn.
+- Local estimation dedupes by request/message id — `claude --resume` copies
+  history into a new transcript and previously double-counted it.
+- Keychain: full-keychain enumeration (`dump-keychain`) now runs only on a
+  cache miss, never on the steady-state path; check cadence has a 15s floor.
+- Usage requests self-identify as `claude-powernap/<version>` (verified
+  accepted) instead of a claude-cli User-Agent.
+- uvx installs embed a stable system interpreter (not uv's collectible
+  cache path) into hooks/shims/scheduled jobs; re-running setup repairs a
+  stale interpreter in existing hooks.
+- Account switches also reset burn-rate samples; source flips
+  (endpoint↔local) reset them too, preventing phantom burn spikes.
+- Warn keys bucket the reset time to the hour, so endpoint drift can't
+  re-warn mid-window; an active weekly stop suppresses the contradictory
+  5h resume instruction.
+- Watcher dry-run is truly read-only; rescue retries on failed resumes;
+  resumed/notified ledgers prune after 24h; cwd is shell-quoted (and falls
+  back to home when deleted) in resume commands.
+- `status` reads state under the lock; `--debug` never writes unlocked.
+- Partial `token_weights` config merges over defaults instead of crashing
+  the scan; multi-machine calibration guarded by a substantial-usage floor
+  and smoothing; missing-budget rescans throttled to hourly.
+- Empty hook session_id falls back to the transcript filename.
+- Removed a stale committed wheel from `dist/` (would have broken future
+  publishes); sdist excludes demo/CI files; README/SECURITY corrections
+  (Keychain enumeration disclosure, honest UA, cadence and trigger accuracy,
+  uninstall matrix per install method, sleep/`caffeinate` caveat, absolute
+  image URLs for PyPI).
+
 ## [0.2.0] - 2026-07-18
 
 ### Added

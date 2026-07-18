@@ -96,6 +96,10 @@ def parse_reset(text, error_ts_iso):
     err = err.astimezone(tz) if tz else err.astimezone()
     reset = err.replace(hour=hh, minute=mm, second=0, microsecond=0)
     if reset <= err:
+        # Error stamped within the reset minute itself means the reset just
+        # happened — don't push it a full day out.
+        if (err - reset) < timedelta(minutes=2):
+            return reset
         reset += timedelta(days=1)
     return reset
 
@@ -131,7 +135,9 @@ def transcript_holders(path):
     except Exception:
         pass
     if IS_MAC:
-        return []
+        # lsof failed/timed out: fail toward "alive" — a wrong "dead" answer
+        # forks a live session; a wrong "alive" answer costs one notification.
+        return [-1]
     # Linux fallback when lsof is missing: scan /proc/*/fd symlinks.
     pids = []
     target = str(Path(path).resolve())
@@ -154,8 +160,12 @@ def resume_prompt(session_id):
 
 
 def open_terminal_resume(cwd, session_id, cfg):
-    prompt = resume_prompt(session_id).replace('"', '\\"')
-    shell_cmd = f'cd {cwd} && claude --resume {session_id} "{prompt}"'
+    import shlex
+    if not Path(cwd).is_dir():
+        cwd = str(Path.home())  # session's cwd was deleted; resume from home
+    prompt = resume_prompt(session_id)
+    shell_cmd = (f'cd {shlex.quote(cwd)} && claude --resume '
+                 f'{shlex.quote(session_id)} {shlex.quote(prompt)}')
     if IS_WIN:
         import shutil
         claude = shutil.which("claude") or "claude"
@@ -268,7 +278,8 @@ def rescue_paused(state, cfg, dry, now):
     session shows no transcript activity well past its reset, the scheduled
     task died with its process (sleep/reboot/crash) — recover it here.
     """
-    paused = state.get("paused", {})
+    paused = state.setdefault("paused", {})
+    resumed = state.setdefault("resumed", {})
     for session_id, rec in list(paused.items()):
         try:
             reset = datetime.fromisoformat(
@@ -280,17 +291,16 @@ def rescue_paused(state, cfg, dry, now):
         if now < reset_ep + grace + 600:      # alarm window + 10 min of slack
             continue
         jsonl = find_transcript(session_id)
-        if jsonl is None:
-            del paused[session_id]
-            continue
-        if jsonl.stat().st_mtime > reset_ep:  # woke up on its own
-            del paused[session_id]
-            continue
+        already_done = jsonl is None or jsonl.stat().st_mtime > reset_ep \
+            or session_id in resumed
         if dry:
-            print(f"paused session={session_id} missed its alarm "
-                  f"(reset {fmt_local(reset.isoformat()) if reset else '?'})")
+            if not already_done:
+                print(f"paused session={session_id} missed its alarm "
+                      f"(reset {fmt_local(reset.isoformat()) if reset else '?'})")
+            continue  # dry mode: report only, mutate nothing
+        if already_done:  # gone, woke on its own, or other path resumed it
+            del paused[session_id]
             continue
-        del paused[session_id]
         holders = transcript_holders(jsonl)
         cwd = session_cwd(jsonl)
         if holders:
@@ -298,25 +308,40 @@ def rescue_paused(state, cfg, dry, now):
                    f"Window reset but session {session_id[:8]}… never woke — "
                    f"submit any prompt to resume it.")
             log(f"rescue: paused {session_id} alive but silent past reset; notified")
+            del paused[session_id]
         else:
+            # Shared ledger with the rate-limit path: mark BEFORE spawning so
+            # the other path can never resume the same session; roll back only
+            # if every resume attempt failed (so the next run retries).
+            resumed[session_id] = now
             try:
                 open_terminal_resume(cwd, session_id, cfg)
                 log(f"rescue: paused {session_id} resumed in new window (alarm died)")
                 notify("claude-powernap", f"Resumed napping session {session_id[:8]}…")
+                del paused[session_id]
             except Exception as e:
                 log(f"rescue: terminal resume failed ({e!r}); going headless")
                 try:
                     headless_resume(cwd, session_id, cfg)
+                    log(f"rescue: headless resume launched for {session_id}")
+                    del paused[session_id]
                 except Exception as e2:
-                    log(f"rescue: headless ALSO failed: {e2!r}")
+                    log(f"rescue: headless ALSO failed: {e2!r}; will retry")
+                    del resumed[session_id]
 
 
 def run_watch(cfg, dry):
     state = load_state()
-    rescue_paused(state, cfg, dry, time.time())
+    now = time.time()
     resumed = state.setdefault("resumed", {})
     notified = state.setdefault("notified", {})
-    now = time.time()
+    if not dry:
+        # Prune ledgers: entries older than a day are history, and a stale
+        # `resumed` entry would permanently block a session's NEXT rescue.
+        for ledger in (resumed, notified):
+            for k in [k for k, v in ledger.items() if now - v > 86400]:
+                del ledger[k]
+    rescue_paused(state, cfg, dry, now)
 
     if not PROJECTS_DIR.is_dir():
         return
@@ -345,6 +370,7 @@ def run_watch(cfg, dry):
         if now - mtime < 300:               # touched in last 5 min -> leave it be
             continue
         if session_id in resumed:
+            state.get("paused", {}).pop(session_id, None)  # handled here
             continue
 
         holders = transcript_holders(jsonl)
@@ -358,6 +384,7 @@ def run_watch(cfg, dry):
                 log(f"fallback: session {session_id} alive (pids {holders}), notified user")
         else:
             resumed[session_id] = now
+            state.get("paused", {}).pop(session_id, None)  # single ledger wins
             try:
                 open_terminal_resume(cwd, session_id, cfg)
                 log(f"fallback: resumed {session_id} in {cfg.get('terminal_app')} window (cwd {cwd})")
@@ -370,7 +397,8 @@ def run_watch(cfg, dry):
                 except Exception as e2:
                     log(f"fallback: headless resume ALSO failed: {e2!r}")
                     del resumed[session_id]
-    save_state(state)
+    if not dry:
+        save_state(state)
 
 
 if __name__ == "__main__":
