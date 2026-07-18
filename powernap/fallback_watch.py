@@ -256,8 +256,64 @@ def main():
         run_watch(cfg, dry)
 
 
+def find_transcript(session_id):
+    hits = list(PROJECTS_DIR.glob(f"*/{session_id}.jsonl"))
+    return hits[0] if hits else None
+
+
+def rescue_paused(state, cfg, dry, now):
+    """Rescue napping sessions whose in-session resume alarm never fired.
+
+    The hook records every pause it triggers in state['paused']. If a paused
+    session shows no transcript activity well past its reset, the scheduled
+    task died with its process (sleep/reboot/crash) — recover it here.
+    """
+    paused = state.get("paused", {})
+    for session_id, rec in list(paused.items()):
+        try:
+            reset = datetime.fromisoformat(
+                (rec.get("resets_at") or "").replace("Z", "+00:00"))
+        except ValueError:
+            reset = None
+        reset_ep = reset.timestamp() if reset else rec.get("paused_at", 0) + 5 * 3600
+        grace = cfg.get("resume_grace_min", 3) * 60
+        if now < reset_ep + grace + 600:      # alarm window + 10 min of slack
+            continue
+        jsonl = find_transcript(session_id)
+        if jsonl is None:
+            del paused[session_id]
+            continue
+        if jsonl.stat().st_mtime > reset_ep:  # woke up on its own
+            del paused[session_id]
+            continue
+        if dry:
+            print(f"paused session={session_id} missed its alarm "
+                  f"(reset {fmt_local(reset.isoformat()) if reset else '?'})")
+            continue
+        del paused[session_id]
+        holders = transcript_holders(jsonl)
+        cwd = session_cwd(jsonl)
+        if holders:
+            notify("claude-powernap",
+                   f"Window reset but session {session_id[:8]}… never woke — "
+                   f"submit any prompt to resume it.")
+            log(f"rescue: paused {session_id} alive but silent past reset; notified")
+        else:
+            try:
+                open_terminal_resume(cwd, session_id, cfg)
+                log(f"rescue: paused {session_id} resumed in new window (alarm died)")
+                notify("claude-powernap", f"Resumed napping session {session_id[:8]}…")
+            except Exception as e:
+                log(f"rescue: terminal resume failed ({e!r}); going headless")
+                try:
+                    headless_resume(cwd, session_id, cfg)
+                except Exception as e2:
+                    log(f"rescue: headless ALSO failed: {e2!r}")
+
+
 def run_watch(cfg, dry):
     state = load_state()
+    rescue_paused(state, cfg, dry, time.time())
     resumed = state.setdefault("resumed", {})
     notified = state.setdefault("notified", {})
     now = time.time()

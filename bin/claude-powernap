@@ -76,7 +76,8 @@ def status():
     print(f"5h window: {pct if pct is not None else 'unknown'}%"
           f"  (source: {usage['source']}, resets {fmt_local(usage.get('resets_at'))})")
     if usage.get("weekly_pct") is not None:
-        print(f"weekly:    {usage['weekly_pct']}%  (resets {fmt_local(usage.get('weekly_resets_at'))})")
+        guard = "guard on" if cfg.get("weekly_guard") else "guard off"
+        print(f"weekly:    {usage['weekly_pct']}%  ({guard}, resets {fmt_local(usage.get('weekly_resets_at'))})")
     if state.get("warned"):
         print(f"warned:    {len(state['warned'])} session-window(s)")
 

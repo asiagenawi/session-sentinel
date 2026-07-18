@@ -29,6 +29,9 @@ DEFAULT_CONFIG = {
     "enabled": True,
     "threshold_pct": 90,
     "check_interval_s": 120,
+    "safety_margin_min": 9,     # warn when projected time-to-limit dips below this
+    "weekly_guard": False,      # opt-in: warn/pause on the WEEKLY window too
+    "weekly_threshold_pct": 90,
     "endpoint_enabled": True,
     "terminal_app": "Terminal",          # or "iTerm2"
     "resume_grace_min": 3,               # schedule resume this many min after reset
@@ -308,6 +311,55 @@ def check_account_switch(state):
             state.pop(k, None)
         log(f"account switch detected ({prev[:8]}… -> {uuid[:8]}…); cleared per-account state")
     state["account_uuid"] = uuid
+
+
+def effective_interval(cfg, pct):
+    """Adaptive check cadence: the closer to the limit, the shorter the throttle."""
+    base = cfg["check_interval_s"]
+    if pct is None:
+        return base
+    if pct >= 90:
+        return 0            # check on every hook fire
+    if pct >= 80:
+        return min(base, 30)
+    return base
+
+
+def record_sample(state, pct, now=None):
+    """Append a (ts, pct) usage sample; keep a short rolling history."""
+    now = now or time.time()
+    hist = state.setdefault("samples", [])
+    hist.append([now, pct])
+    # New 5h window (pct dropped sharply) -> old samples are meaningless.
+    if len(hist) >= 2 and pct < hist[-2][1] - 10:
+        del hist[:-1]
+    del hist[:-12]
+
+
+def projected_minutes_to_limit(state, now=None):
+    """Minutes until 100% at the recent burn rate, or None if unknown/idle.
+
+    Burn rate is an exponentially-weighted mean of per-sample deltas, so a
+    subagent-heavy sprint between checks shows up immediately.
+    """
+    now = now or time.time()
+    hist = [s for s in state.get("samples", []) if now - s[0] < 45 * 60]
+    if len(hist) < 2:
+        return None
+    rate, weight = 0.0, 0.0
+    for (t0, p0), (t1, p1) in zip(hist, hist[1:]):
+        dt = (t1 - t0) / 60
+        if dt <= 0:
+            continue
+        w = 0.6 ** ((now - t1) / 300)   # halve influence every ~4 min of age
+        rate += w * ((p1 - p0) / dt)
+        weight += w
+    if not weight:
+        return None
+    rate /= weight
+    if rate <= 0.05:                     # effectively idle
+        return None
+    return (100 - hist[-1][1]) / rate
 
 
 def get_usage(state, cfg=None):

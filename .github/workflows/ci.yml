@@ -54,6 +54,8 @@ jobs:
           python3 -c "import json; d=json.load(open('hook.json')); assert 'USAGE LIMIT WARNING' in d['hookSpecificOutput']['additionalContext']"
       - name: State lock concurrency
         run: python3 scripts/ci_lock_test.py
+      - name: Napping-session rescue
+        run: python3 scripts/ci_rescue_test.py
       - name: Watcher dry-run + CLI
         run: |
           python3 "$HOME/.claude/claude-powernap/fallback_watch.py" --dry-run
@@ -106,6 +108,9 @@ jobs:
       - name: State lock concurrency
         shell: pwsh
         run: python scripts\ci_lock_test.py
+      - name: Napping-session rescue
+        shell: pwsh
+        run: python scripts\ci_rescue_test.py
       - name: Liveness check (rename-test on open file)
         shell: pwsh
         run: python scripts\ci_liveness_test.py

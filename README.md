@@ -102,7 +102,10 @@ claude-powernap log      # what the watcher and monitor have been doing
 |---|---|---|
 | `enabled` | `true` | master switch (what `on`/`off` flips) |
 | `threshold_pct` | `90` | warn/pause threshold for the 5h window |
-| `check_interval_s` | `120` | min seconds between usage checks |
+| `check_interval_s` | `120` | base seconds between checks (auto-tightens to 30s above 80%, every event above 90%) |
+| `safety_margin_min` | `9` | also warn when the current burn rate projects the limit within this many minutes |
+| `weekly_guard` | `false` | opt-in: also warn/pause on the **weekly** window (no auto-resume — its reset is days away) |
+| `weekly_threshold_pct` | `90` | weekly-guard warning threshold |
 | `endpoint_enabled` | `true` | `false` = fully local estimation only |
 | `terminal_app` | `Terminal` | macOS: `Terminal`/`iTerm2`; Linux: terminal binary name (auto-detected if unset) |
 | `resume_grace_min` | `3` | schedule resume this long after reset |

@@ -13,12 +13,14 @@ import time
 from datetime import datetime, timedelta
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
-from powernap_common import (CHECKPOINT_DIR, fmt_local, load_config, load_state,
-                             log, save_state, state_lock, get_usage,
+from powernap_common import (CHECKPOINT_DIR, effective_interval, fmt_local,
+                             load_config, load_state, log,
+                             projected_minutes_to_limit, record_sample,
+                             save_state, state_lock, get_usage,
                              get_usage_local)
 
 
-def build_warning(pct, resets_iso, session_id, cfg, source):
+def build_warning(pct, resets_iso, session_id, cfg, source, projected=None):
     resume_at = "the reset time"
     try:
         dt = datetime.fromisoformat(resets_iso.replace("Z", "+00:00"))
@@ -28,9 +30,11 @@ def build_warning(pct, resets_iso, session_id, cfg, source):
         pass
     ckpt = CHECKPOINT_DIR / f"{session_id or 'unknown-session'}.md"
     approx = " (approximate local estimate)" if source == "local" else ""
+    pace = (f" At the current burn rate the limit is ~{projected:.0f} minutes away."
+            if projected is not None else "")
     return (
         f"[claude-powernap] USAGE LIMIT WARNING: you have consumed {pct}% of the "
-        f"5-hour usage window{approx}. The window resets at {fmt_local(resets_iso)}. "
+        f"5-hour usage window{approx}. The window resets at {fmt_local(resets_iso)}.{pace} "
         f"To avoid dying mid-task, follow this pause protocol NOW:\n"
         f"1. Do NOT start new work. Finish or safely stop the current step only.\n"
         f"2. Write a checkpoint file to {ckpt} covering: work completed, current "
@@ -42,6 +46,22 @@ def build_warning(pct, resets_iso, session_id, cfg, source):
         f"and idle. Do not keep working past this warning.\n"
         f"If you cannot create scheduled tasks, still write the checkpoint, then "
         f"tell the user to send any message after {resume_at} to resume."
+    )
+
+
+def build_weekly_warning(pct, resets_iso, session_id, cfg):
+    ckpt = CHECKPOINT_DIR / f"{session_id or 'unknown-session'}.md"
+    return (
+        f"[claude-powernap] WEEKLY LIMIT WARNING: you have consumed {pct}% of the "
+        f"WEEKLY usage window, which resets {fmt_local(resets_iso)} — days away, "
+        f"not hours. Auto-resume does not apply here. Do this NOW:\n"
+        f"1. Do NOT start new work. Finish or safely stop the current step only.\n"
+        f"2. Write a checkpoint file to {ckpt} covering: work completed, current "
+        f"state, and exact next steps.\n"
+        f"3. Tell the user plainly: the weekly limit is nearly exhausted, work is "
+        f"stopping to preserve the remainder, and it resets {fmt_local(resets_iso)}. "
+        f"Do NOT schedule a resume task.\n"
+        f"4. END your turn and idle."
     )
 
 
@@ -74,35 +94,70 @@ def main():
 def run_check(cfg, session_id, event, debug, force_local):
     state = load_state()
     now = time.time()
-    if not debug and now - state.get("last_check", 0) < cfg["check_interval_s"]:
+    throttle = effective_interval(cfg, state.get("last_pct"))
+    if not debug and now - state.get("last_check", 0) < throttle:
         return
     state["last_check"] = now
 
     usage = get_usage_local(state) if force_local else get_usage(state, cfg)
+    if usage.get("pct") is not None:
+        record_sample(state, usage["pct"], now)
+    projected = projected_minutes_to_limit(state, now)
     state.update({"last_pct": usage.get("pct"), "last_source": usage["source"],
                   "last_resets_at": usage.get("resets_at"),
-                  "last_weekly_pct": usage.get("weekly_pct")})
+                  "last_weekly_pct": usage.get("weekly_pct"),
+                  "projected_min_to_limit": round(projected, 1) if projected else None})
 
     if debug:
-        print(json.dumps(usage, indent=2))
+        print(json.dumps({**usage, "projected_min_to_limit": projected}, indent=2))
         save_state(state)
         return
 
-    pct, resets = usage.get("pct"), usage.get("resets_at")
     warned = state.setdefault("warned", {})
+
+    # Weekly guard (opt-in, default off): a wall the 5h machinery can't help
+    # with — reset is days out, so pause WITHOUT scheduling a resume.
+    wpct, wresets = usage.get("weekly_pct"), usage.get("weekly_resets_at")
+    if (cfg.get("weekly_guard") and wpct is not None
+            and wpct >= cfg.get("weekly_threshold_pct", 90)):
+        weekly_key = f"{session_id}:weekly:{wresets}"
+        if weekly_key not in warned:
+            warned[weekly_key] = now
+            log(f"WEEKLY-WARN session={session_id} weekly_pct={wpct} resets={wresets}")
+            print(json.dumps({"hookSpecificOutput": {
+                "hookEventName": event,
+                "additionalContext": build_weekly_warning(wpct, wresets,
+                                                          session_id, cfg),
+            }}))
+            save_state(state)
+            return  # weekly wall supersedes the 5h protocol
+
+    pct, resets = usage.get("pct"), usage.get("resets_at")
+    # Fire on the static threshold OR when the burn rate projects the limit
+    # inside the safety margin (catches fast burns the threshold would miss).
+    over_threshold = pct is not None and pct >= cfg["threshold_pct"]
+    burn_trigger = (projected is not None and pct is not None and pct >= 50
+                    and projected <= cfg["safety_margin_min"])
     # One warning per session per window (keyed by reset time).
     warn_key = f"{session_id}:{resets}"
-    if (pct is not None and pct >= cfg["threshold_pct"]
-            and warn_key not in warned):
+    if (over_threshold or burn_trigger) and warn_key not in warned:
         warned[warn_key] = now
         # Drop stale warn entries (> 24h).
         for k in [k for k, v in warned.items() if now - v > 86400]:
             del warned[k]
-        log(f"WARN session={session_id} pct={pct} source={usage['source']} resets={resets}")
+        # Pause ledger: the watcher guarantees recovery even if this session
+        # fumbles (or never creates) its own scheduled resume task.
+        if session_id:
+            state.setdefault("paused", {})[session_id] = {
+                "paused_at": now, "resets_at": resets}
+        why = (f"burn-rate projection: ~{projected:.0f} min to limit"
+               if burn_trigger and not over_threshold else "threshold")
+        log(f"WARN session={session_id} pct={pct} trigger={why} "
+            f"source={usage['source']} resets={resets}")
         print(json.dumps({"hookSpecificOutput": {
             "hookEventName": event,
             "additionalContext": build_warning(pct, resets, session_id, cfg,
-                                               usage["source"]),
+                                               usage["source"], projected),
         }}))
     save_state(state)
 

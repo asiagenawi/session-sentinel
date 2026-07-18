@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [0.2.0] - 2026-07-18
+
+### Added
+- **Burn-rate prediction**: warnings also fire when the recent burn rate
+  projects the limit within `safety_margin_min` minutes — catches fast
+  (subagent-heavy) burns the static threshold misses.
+- **Adaptive check cadence**: 30s above 80% usage, every hook event above 90%.
+- **Pause ledger + rescue**: every pause is recorded; the watcher resumes
+  napping sessions whose in-session alarm died (sleep/reboot/crash).
+- **Weekly guard** (opt-in, `weekly_guard: true`): warn/pause on the weekly
+  window; pauses without scheduling a resume since weekly resets are days out.
+- **Account-switch detection**: per-account cached state clears automatically
+  on `/login` to a different account.
+- **Cross-platform state locking**: concurrent sessions can no longer race
+  state.json (fcntl/msvcrt; 12-process CI test).
+
 ## [0.1.0] - 2026-07-18
 
 Initial release.
