@@ -11,13 +11,14 @@ import json
 import sys
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from powernap_common import (CHECKPOINT_DIR, effective_interval, fmt_local,
                              load_config, load_state, log,
                              projected_minutes_to_limit, record_sample,
-                             save_state, state_lock, get_usage,
-                             get_usage_local)
+                             save_state, state_lock, watcher_scheduled,
+                             get_usage, get_usage_local)
 
 
 def build_warning(pct, resets_iso, session_id, cfg, source, projected=None):
@@ -66,6 +67,36 @@ def build_weekly_warning(pct, resets_iso, session_id, cfg):
         f"Do NOT schedule a resume task.\n"
         f"4. END your turn and idle."
     )
+
+
+NUDGE_RETRY_S = 14 * 86400  # if declined/forgotten, mention again in two weeks
+
+
+def watcher_nudge(state, event, now):
+    """One-time setup nudge when the fallback watcher isn't scheduled.
+
+    The plugin install activates hooks with no way to register an OS-level
+    job, so the hook itself detects the gap and asks (option b): full
+    monitoring works either way; the watcher adds crash/hard-limit rescue.
+    """
+    last = state.get("watcher_nudge_ts")
+    if last and now - last < NUDGE_RETRY_S:
+        return None
+    if watcher_scheduled():
+        state["watcher_nudge_ts"] = now + 100 * 365 * 86400  # present; never ask
+        return None
+    state["watcher_nudge_ts"] = now
+    cli = Path(__file__).resolve().parent / "cli.py"
+    return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": (
+        "[claude-powernap] SETUP NOTE (one-time, not urgent): powernap's usage "
+        "monitoring is active, but its fallback watcher — the background job "
+        "that rescues sessions which hard-hit the limit or miss their wake-up "
+        "after a sleep/reboot — is not scheduled on this machine. When "
+        "convenient (do NOT interrupt current work), tell the user and offer "
+        f"to run: python3 \"{cli}\" watcher-setup  (plugin users can also run "
+        "/powernap:watcher). If they decline, drop the subject; this note "
+        "repeats at most every two weeks."
+    )}}
 
 
 def main():
@@ -162,6 +193,12 @@ def run_check(cfg, session_id, event, debug, force_local):
             "additionalContext": build_warning(pct, resets, session_id, cfg,
                                                usage["source"], projected),
         }}))
+    else:
+        # No warning this round — safe slot for the one-time watcher nudge.
+        nudge = watcher_nudge(state, event, now)
+        if nudge:
+            log("nudge: watcher not scheduled; asked session to offer setup")
+            print(json.dumps(nudge))
     save_state(state)
 
 

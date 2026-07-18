@@ -289,6 +289,26 @@ def get_usage_local(state):
             "weekly_pct": None, "weekly_resets_at": None}
 
 
+def watcher_scheduled():
+    """Is the fallback watcher registered with the OS scheduler?"""
+    try:
+        if IS_MAC:
+            r = subprocess.run(["launchctl", "list"], capture_output=True,
+                               text=True, timeout=10)
+            return "com.claude-powernap.watcher" in r.stdout
+        if IS_WIN:
+            r = subprocess.run(["schtasks", "/query", "/tn",
+                                "claude-powernap-watcher"], capture_output=True,
+                               timeout=10)
+            return r.returncode == 0
+        r = subprocess.run(["systemctl", "--user", "is-active",
+                            "claude-powernap.timer"], capture_output=True,
+                           text=True, timeout=10)
+        return r.stdout.strip() == "active"
+    except Exception:
+        return True  # can't tell -> don't nag
+
+
 ACCOUNT_KEYS = ("keychain_service", "calibrated_budget", "calibration_ts")
 
 

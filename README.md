@@ -70,10 +70,12 @@ As a Claude Code plugin (inside any Claude Code session):
 /plugin install powernap@claude-powernap
 ```
 
-The plugin activates the monitoring hooks immediately — no file deployment at
-all. Then run `/powernap:watcher` once to schedule the fallback watcher (an
-OS-level background job, which plugins can't register on their own). Also
-ships `/powernap:status` and `/powernap:toggle on|off`.
+The plugin activates the monitoring hooks immediately. The one thing a
+plugin can't do itself is register the fallback watcher (an OS-level
+background job) — so on first run the hook notices it's missing and has the
+session offer you the one command to set it up (or run `/powernap:watcher`
+yourself anytime). Also ships `/powernap:status` and `/powernap:toggle
+on|off`.
 
 From PyPI (all platforms):
 
