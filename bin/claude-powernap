@@ -15,7 +15,7 @@ from pathlib import Path
 POWERNAP_DIR = Path.home() / ".claude" / "claude-powernap"
 sys.path.insert(0, str(POWERNAP_DIR))
 from powernap_common import (CONFIG_PATH, LOG_PATH, fmt_local, load_config,
-                             load_state, save_state, get_usage)
+                             load_state, save_state, state_lock, get_usage)
 
 IS_MAC = sys.platform == "darwin"
 IS_WIN = __import__("os").name == "nt"
@@ -68,8 +68,10 @@ def status():
     print(f"enabled:   {cfg.get('enabled')}")
     print(f"threshold: {cfg.get('threshold_pct')}%")
     print(f"watcher:   {'loaded' if watcher_loaded() else 'not loaded'}")
-    usage = get_usage(state, cfg)
-    save_state(state)
+    with state_lock() as acquired:
+        usage = get_usage(state, cfg)
+        if acquired:  # display-only caller: never clobber state unlocked
+            save_state(state)
     pct = usage.get("pct")
     print(f"5h window: {pct if pct is not None else 'unknown'}%"
           f"  (source: {usage['source']}, resets {fmt_local(usage.get('resets_at'))})")

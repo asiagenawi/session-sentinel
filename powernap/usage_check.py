@@ -14,7 +14,8 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from powernap_common import (CHECKPOINT_DIR, fmt_local, load_config, load_state,
-                             log, save_state, get_usage, get_usage_local)
+                             log, save_state, state_lock, get_usage,
+                             get_usage_local)
 
 
 def build_warning(pct, resets_iso, session_id, cfg, source):
@@ -62,6 +63,15 @@ def main():
     session_id = hook_input.get("session_id", "")
     event = hook_input.get("hook_event_name", "PostToolUse")
 
+    # One checker at a time: state.json is shared across sessions, so if
+    # another hook/watcher holds the lock, its check covers this one too.
+    with state_lock() as acquired:
+        if not acquired and not debug:
+            return
+        run_check(cfg, session_id, event, debug, force_local)
+
+
+def run_check(cfg, session_id, event, debug, force_local):
     state = load_state()
     now = time.time()
     if not debug and now - state.get("last_check", 0) < cfg["check_interval_s"]:

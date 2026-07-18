@@ -1,4 +1,5 @@
 """Shared logic for claude-powernap: config, state, usage sources, block math."""
+import contextlib
 import json
 import os
 import re
@@ -56,6 +57,50 @@ def load_config():
     cfg = dict(DEFAULT_CONFIG)
     cfg.update(load_json(CONFIG_PATH, {}))
     return cfg
+
+
+@contextlib.contextmanager
+def state_lock(timeout=2.0):
+    """Exclusive advisory lock for state.json read-modify-write cycles.
+
+    Yields True if acquired, False on timeout. Callers that only refresh
+    shared state (hooks, watcher) should treat False as "another process is
+    already on it" and skip; display-only callers may proceed unlocked.
+    fcntl on POSIX, msvcrt on Windows.
+    """
+    POWERNAP_DIR.mkdir(parents=True, exist_ok=True)
+    lock_file = open(POWERNAP_DIR / "state.lock", "a+")
+    acquired = False
+    try:
+        deadline = time.time() + timeout
+        while not acquired:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except OSError:
+                if time.time() >= deadline:
+                    break
+                time.sleep(0.05)
+        yield acquired
+    finally:
+        if acquired:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(lock_file, fcntl.LOCK_UN)
+            except OSError:
+                pass
+        lock_file.close()
 
 
 def load_state():
@@ -241,8 +286,33 @@ def get_usage_local(state):
             "weekly_pct": None, "weekly_resets_at": None}
 
 
+ACCOUNT_KEYS = ("keychain_service", "calibrated_budget", "calibration_ts")
+
+
+def check_account_switch(state):
+    """Clear per-account cached state when the logged-in account changes.
+
+    Usage windows, budgets, and tokens are per-account; a /login to another
+    account silently invalidates all of them.
+    """
+    try:
+        with open(HOME / ".claude.json") as f:
+            uuid = (json.load(f).get("oauthAccount") or {}).get("accountUuid")
+    except (OSError, json.JSONDecodeError):
+        return
+    if not uuid:
+        return
+    prev = state.get("account_uuid")
+    if prev and prev != uuid:
+        for k in ACCOUNT_KEYS:
+            state.pop(k, None)
+        log(f"account switch detected ({prev[:8]}… -> {uuid[:8]}…); cleared per-account state")
+    state["account_uuid"] = uuid
+
+
 def get_usage(state, cfg=None):
     cfg = cfg or load_config()
+    check_account_switch(state)
     usage = get_usage_from_endpoint(state) if cfg.get("endpoint_enabled") else None
     if usage is None:
         return get_usage_local(state)

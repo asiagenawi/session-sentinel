@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from powernap_common import (CHECKPOINT_DIR, IS_MAC, IS_WIN, PROJECTS_DIR,
                              POWERNAP_DIR, fmt_local, load_config, load_state,
-                             log, save_state)
+                             log, save_state, state_lock)
 
 # (binary, flags-before-command) pairs, tried in order on Linux
 LINUX_TERMINALS = [
@@ -250,6 +250,13 @@ def main():
     cfg = load_config()
     if not cfg.get("enabled") and not dry:
         return
+    with state_lock(timeout=5.0) as acquired:
+        if not acquired and not dry:
+            return  # a hook holds it; the timer re-runs in 2 min
+        run_watch(cfg, dry)
+
+
+def run_watch(cfg, dry):
     state = load_state()
     resumed = state.setdefault("resumed", {})
     notified = state.setdefault("notified", {})
