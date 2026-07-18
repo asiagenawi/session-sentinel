@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning: [SemVer](https://semver.org/).
 
+## [0.3.2] - 2026-07-18
+
+### Fixed
+- Local estimation can no longer emit wildly wrong warnings (field incident:
+  "1085.7% of the 5h window" with negative minutes-to-limit) when a leftover
+  test/demo config carries a tiny `local_budget_weighted_tokens`:
+  - Budgets under 100,000 weighted tokens are ignored on config load as
+    test/demo leftovers (diagnostic logged, throttled hourly).
+  - A local estimate above 150% now discards itself (the budget is garbage)
+    with a diagnostic naming block tokens, budget, and budget source;
+    estimates between 100% and 150% clamp to 100%.
+  - `projected_minutes_to_limit` is floored at 0 — never negative — and the
+    warning's "~N minutes away" clause only renders for positive projections.
+- Endpoint fallback is no longer silent: a missing/expired OAuth token logs
+  "no valid OAuth token; falling back to local estimation" (throttled hourly).
+
+### Added
+- `scripts/ci_estimate_sanity_test.py`: sandboxed regression test (tiny
+  budget + heavy transcript + endpoint disabled must never produce a >150%
+  warning or a negative projection); wired into unix and windows CI.
+
 ## [0.3.1] - 2026-07-18
 
 ### Changed
